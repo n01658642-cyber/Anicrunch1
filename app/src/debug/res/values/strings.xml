@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug builds install beside the release app (applicationIdSuffix ".debug"), and with the same
+    name the two are indistinguishable — LineageOS's TV launcher even folds them into one tile and
+    only ever opens the release app. A name of its own keeps the debug build findable.
+-->
+<resources>
+    <string name="app_name">Anilili Debug</string>
+</resources>

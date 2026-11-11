@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Keys for View.setTag(int, Object). Android requires a declared id here: a bare integer
+      throws, and reusing another view's id would collide.
+      Used by PlayerSurface to keep the subtitle canvas's edge inset and its layout listener
+      attached to the SubtitleView across recompositions.
+    -->
+    <item name="caption_edge_inset" type="id" />
+    <item name="caption_edge_inset_listener" type="id" />
+</resources>

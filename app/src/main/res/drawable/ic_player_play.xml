@@ -1,0 +1,17 @@
+<!--
+  Player transport glyphs. Tinted at the call site, so the colour here is only a sane default.
+
+  Drawn heavier and rounder than the Material equivalents they replace: over a bright frame a thin
+  outline glyph loses its edges, and these sit directly on the picture with no button plate behind
+  them.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M21.4086,9.3526c2.1219,1.1539 2.1219,4.1409 0,5.2948l-12.812,6.9671c-2.0623,1.1215 -4.5966,-0.3382 -4.5966,-2.6474L4,5.0329c0,-2.3092 2.5344,-3.7689 4.5966,-2.6474L21.4086,9.3526z"/>
+</vector>

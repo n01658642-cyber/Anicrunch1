@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ always shows a system splash before the first frame, and by default it is the
+         launcher icon: a full-colour mark that then gave way to AppLaunchSplash's dim, filling
+         one, so every cold start showed two different logos back to back. It now shows the
+         splash's own first frame instead. -->
+    <style name="Theme.MiruroNative" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@color/miruro_bg</item>
+        <item name="android:navigationBarColor">@color/miruro_bg</item>
+        <item name="android:windowBackground">@color/miruro_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowSplashScreenBackground">@color/miruro_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_vessel</item>
+    </style>
+</resources>
