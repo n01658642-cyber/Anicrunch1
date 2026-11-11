@@ -1374,9 +1374,7 @@ private fun WatchContent(
                                 focusPlayerOnStart = fullscreen,
                                 isFullscreen = fullscreen,
                                 onToggleFullscreen = onToggleFullscreen,
-                    onTogglePlayerOrientation = onTogglePlayerOrientation,
-                    forcePortraitPlayer = forcePortraitPlayer,
-                                onFullscreenChanged = onFullscreenChanged,
+                                                    onFullscreenChanged = onFullscreenChanged,
                                 onProgress = onProgress,
                                 onPlaybackError = onPlaybackError,
                                 onPlaybackStopperChanged = onPlaybackStopperChanged,
@@ -1624,9 +1622,7 @@ private fun WatchContent(
                     onRetryMiruroSources = onRetryMiruroSources,
                     focusRequester = sourceFocus,
                     onToggleFullscreen = onToggleFullscreen,
-                    onTogglePlayerOrientation = onTogglePlayerOrientation,
-                    forcePortraitPlayer = forcePortraitPlayer,
-                    downFocus = tvBrowserFocus.takeIf { tvBrowserVisible },
+                                        downFocus = tvBrowserFocus.takeIf { tvBrowserVisible },
                 )
                 data.notice?.let { notice ->
                     Text(
