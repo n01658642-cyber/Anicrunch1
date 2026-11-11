@@ -2195,18 +2195,7 @@ fun PlayerSurface(
                 markers = seekMarkers,
                 topRightIcons = {
                     onAddToList?.let { openList ->
-                        
-                    if (onTogglePlayerOrientation != null && isFullscreen) {
-                        PlayerActionPill(
-                            label = if (forcePortraitPlayer) "Horizontal" else "Vertical",
-                            icon = Icons.Default.ScreenRotation,
-                            onClick = {
-                                onTogglePlayerOrientation.invoke()
-                                phoneControlsInteraction++
-                            },
-                        )
-                    }
-PlayerControlIconButton(
+                        PlayerControlIconButton(
                             "Add to My List",
                             Icons.AutoMirrored.Filled.PlaylistAdd,
                             onClick = {
@@ -2250,6 +2239,16 @@ PlayerControlIconButton(
                     },
                 )
                 CastButton(Modifier.size(48.dp))
+                if (onTogglePlayerOrientation != null && isFullscreen) {
+                    PlayerActionPill(
+                        label = if (forcePortraitPlayer) "Horizontal" else "Vertical",
+                        icon = Icons.Default.ScreenRotation,
+                        onClick = {
+                            onTogglePlayerOrientation.invoke()
+                            phoneControlsInteraction++
+                        },
+                    )
+                }
                 PlayerActionPill(
                     label = if (isFullscreen) "Exit" else "Fullscreen",
                     icon = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,

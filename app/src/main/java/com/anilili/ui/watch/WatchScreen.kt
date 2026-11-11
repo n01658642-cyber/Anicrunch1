@@ -358,6 +358,9 @@ fun WatchScreen(
 
     // Prime-Video-style: fullscreen defaults to landscape; rotate toggles portrait (incl. offline).
     var forcePortraitPlayer by remember { mutableStateOf(false) }
+    LaunchedEffect(fullscreen) {
+        if (!fullscreen) forcePortraitPlayer = false
+    }
 
     // Drive orientation from the fullscreen flag; restore it (and the bars) on leave.
     DisposableEffect(fullscreen, device.isTv, forcePortraitPlayer) {
@@ -367,7 +370,6 @@ fun WatchScreen(
                 forcePortraitPlayer -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
-            if (!fullscreen) forcePortraitPlayer = false
         }
         onDispose {
             val w = activity?.window
