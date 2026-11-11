@@ -1,0 +1,228 @@
+# Daily rebuild of the anime metadata tree the app reads.
+#
+# Belongs at .github/workflows/refresh.yml in the *dataset* repo, not this one. The dataset repo is
+# self-contained by necessity: the app's source is not on GitHub, so the workflow cannot check it
+# out — konoha_build.py is vendored alongside this file and updated by hand when it changes.
+#
+# Only the airing half is re-fetched from TMDB. A finished series has the episode list it will
+# always have, so re-asking for all fifteen thousand daily would add ~20 minutes and change
+# nothing. Use the `full` input to force a complete rebuild after a generator change.
+name: Refresh metadata
+
+on:
+  schedule:
+    # 05:00 UTC — after the Japanese broadcast day has finished and TMDB contributors have had a
+    # night to add stills, and outside the hour when everyone else's cron fires.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Re-fetch every title from TMDB, not just airing ones"
+        type: boolean
+        default: false
+      ids:
+        description: "Also re-fetch these AniList ids from TMDB (comma-separated), e.g. after a matcher change"
+        type: string
+        default: ""
+
+concurrency:
+  # Two refreshes pushing the same tree would conflict on the commit, and the loser's work is lost
+  # anyway. Never cancel a run in flight: it holds the only copy of an hours-long TMDB walk.
+  group: refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      # Depth 2, not 1: the purge step diffs HEAD~1 against HEAD to find what changed, and a depth-1
+      # clone has no HEAD~1. Full history is ~60,000 files a day of churn and would make the daily
+      # clone the slowest step in the job.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # numpy for the recommendation graph's tag similarity: a 17,000-square cosine matrix is seconds
+      # as a blocked matrix product and the better part of an hour in plain Python.
+      - run: pip install requests numpy
+
+      # Cached so an interrupted or rate-limited run resumes instead of re-walking AniList from
+      # 1900. The key rotates daily so the cache never outlives the data in it.
+      - uses: actions/cache@v4
+        with:
+          path: build/konoha
+          key: konoha-work-${{ github.run_id }}
+          restore-keys: konoha-work-
+
+      - name: Walk AniList
+        run: python scripts/konoha_build.py catalog
+
+      # `ids` re-fetches finished titles the airing pass never revisits. That matters because emit
+      # deletes an episodes.json whose cached answer is empty: a list published by hand for a
+      # finished title survives only once this cache holds the same answer, and this is how it gets
+      # there without a five-hour full run. Passed through env, never spliced into the script.
+      - name: Fetch episode lists
+        env:
+          TMDB_READ_TOKEN: ${{ secrets.TMDB_READ_TOKEN }}
+          REFETCH_IDS: ${{ inputs.ids }}
+        run: |
+          # The committed AniZip answers carry the air dates the near-count season check reads, and
+          # the emit step's copy below comes too late for it.
+          mkdir -p build/konoha/anizip
+          if [ -d anizip ]; then cp -r anizip/. build/konoha/anizip/; fi
+          if [ "${{ inputs.full }}" = "true" ]; then
+            python scripts/konoha_build.py episodes --out data
+          else
+            python scripts/konoha_build.py episodes --out data --airing-only
+          fi
+          if [ -n "$REFETCH_IDS" ]; then
+            python scripts/konoha_build.py episodes --out data --ids "$REFETCH_IDS"
+          fi
+
+      # AniZip answers (the series' clearlogo and per-episode scores) are fetched off this runner by
+      # `konoha_build.py anizip` and committed under anizip/, because emit reads them from the
+      # work directory and a title missing there is emitted *without* its logo. Copying them in
+      # here is what keeps a published logo from being wiped by the next daily run.
+      - name: Emit tree
+        run: |
+          mkdir -p build/konoha/anizip
+          if [ -d anizip ]; then cp -r anizip/. build/konoha/anizip/; fi
+          if [ -f data/dub-index.json ]; then cp data/dub-index.json /tmp/dub-index.json; fi
+          if [ -f data/dub-episodes.json ]; then cp data/dub-episodes.json /tmp/dub-episodes.json; fi
+          if [ -f data/filler-index.json ]; then cp data/filler-index.json /tmp/filler-index.json; fi
+          python scripts/konoha_build.py emit --out data
+          if [ -f /tmp/dub-index.json ]; then cp /tmp/dub-index.json data/dub-index.json; fi
+          if [ -f /tmp/dub-episodes.json ]; then cp /tmp/dub-episodes.json data/dub-episodes.json; fi
+          if [ -f /tmp/filler-index.json ]; then cp /tmp/filler-index.json data/filler-index.json; fi
+
+      # The neighbour graph the app recommends from (scripts/recs_build.py). After `emit`, so an
+      # `emit --clean` rebuild cannot take it with it. `fetch` re-asks AniList for the deep recommendations
+      # of a seventh of the ~4,000 titles at the catalogue's 10-per-title cap — about a dozen
+      # requests, since one request carries 50 titles — and keeps the rest in build/konoha with the
+      # walk's own cache. Neither half may fail the refresh: a failed fetch emits from the cache,
+      # and a failed emit puts back yesterday's graph rather than committing its deletion.
+      - name: Build recommendation graph
+        run: |
+          python scripts/recs_build.py fetch \
+            || echo "::warning::deep recommendation fetch failed; emitting from the cache"
+          python scripts/recs_build.py emit --out data || {
+            echo "::warning::recommendation graph emit failed; keeping the published one"
+            git checkout HEAD -- data/recs 2>/dev/null || true
+          }
+
+      # Two aliased AniList requests per month and seconds to run, so it rides along with the daily
+      # refresh rather than earning a schedule of its own. Only the forward window is written: once
+      # a day has aired its rows are settled, and the file written while that month was current is
+      # already final.
+      - name: Write airing schedule
+        run: python scripts/konoha_build.py schedule --out data
+
+      # Bangumi is how the Chinese-language sources become reachable: they index by Chinese name,
+      # and the name they use is often an *alias* rather than Bangumi's own name_cn. Reading
+      # aliases costs an extra API call per candidate, so this joins against the weekly Archive
+      # dump instead -- which also matches better, seeing every name at once rather than the top
+      # rows of a search ranking (99.0% agreement with bangumi-data's curated pairs; the
+      # disagreements are franchise granularity, where the corroborated match is the better
+      # answer, so they are queued for review rather than applied).
+      #
+      # Must run after `emit`, which rewrites every per-title index.json and would drop the block.
+      - name: Resolve Bangumi dump
+        id: bgmdump
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset=$(gh api repos/bangumi/Archive/releases --jq \
+            '[.[0].assets[] | select(.name | endswith(".zip"))] | sort_by(.name) | last')
+          echo "name=$(echo "$asset" | jq -r .name)" >> "$GITHUB_OUTPUT"
+          echo "url=$(echo "$asset" | jq -r .browser_download_url)" >> "$GITHUB_OUTPUT"
+
+      # ~440MB, published weekly, so six days out of seven this is a cache hit. Keyed on the asset
+      # name rather than the date so a skipped week reuses the copy already here.
+      - uses: actions/cache@v4
+        with:
+          path: build/bangumi
+          key: bangumi-dump-${{ steps.bgmdump.outputs.name }}
+
+      - name: Join to Bangumi
+        run: |
+          mkdir -p build/bangumi
+          dump="build/bangumi/${{ steps.bgmdump.outputs.name }}"
+          [ -f "$dump" ] || curl -sSL --retry 3 -o "$dump" "${{ steps.bgmdump.outputs.url }}"
+          # Curated aniList<->bangumi pairs; consulted only where the name matcher is unsure.
+          curl -sSL --retry 3 -o build/bangumi/bangumi-data.json \
+            https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/dist/data.json
+          python scripts/bangumi_backfill.py \
+            --dump "$dump" \
+            --bangumi-data build/bangumi/bangumi-data.json \
+            --repo . --write
+
+      # Resolving a stream on the device is three requests to a site whose origin thinks for 400
+      # to 600ms — about 1,750ms from opening a title to playing. Doing it here instead turns that
+      # into a CDN read the app usually already holds: 111-167ms cold, nothing warm.
+      #
+      # Only sound because these URLs carry no token, signature or expiry — re-resolved eight hours
+      # apart, seven of seven came back byte-identical. They do move once: the site stages the
+      # current year under /temp/{YYMM}/ and files a title into its permanent archive at the
+      # rollover. Those records are marked `temp` and the app retires one the first time a player
+      # refuses it, so a restaged season costs one failed play rather than going quiet.
+      #
+      # Must run after `Join to Bangumi`: the crawl is keyed on the subject id that step writes.
+      - name: Resolve Lili streams
+        run: |
+          python scripts/lili_sources.py --repo . --top 200 --concurrency 4 \
+            --skip-fresh-days 30 --write
+          python scripts/lili_sources.py --repo . --airing --concurrency 4 --write
+
+      - name: Commit
+        id: commit
+        run: |
+          git config user.name "konoha-refresh"
+          # The noreply form, so an automated commit never publishes an address.
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Refresh metadata $(date -u +%Y-%m-%d)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # jsDelivr caches a branch reference for up to twelve hours and does not watch for pushes, so
+      # without this the commit above reaches no device until the cache expires on its own.
+      # Two spellings of this repo, not one. It was renamed from `anilili-metadata` on 2026-09-21;
+      # GitHub redirects the old name and jsDelivr follows it, so builds released before the rename
+      # still read this tree. But jsDelivr keys its cache on the URL, so the old name is a
+      # *separate* set of cached objects that purging the current name does not touch. Purge only
+      # one and half the installed base sits on a twelve-hour-stale tree with nothing in the logs
+      # to explain it. Drop the legacy entry once builds older than 0.1.80 are gone.
+      - name: Purge jsDelivr
+        if: steps.commit.outputs.changed == 'true'
+        run: |
+          for repo in "${{ github.repository }}" DATA_OWNER/anilili-metadata; do
+            # recs/ sorts after anime/, so the capped diff below never reaches it either.
+            for path in dub-index.json filler-index.json dub-episodes.json backdrops.json index.json id-map.json airing.json stats.json sync-status.json \
+                recs/neighbours-v1.tsv.gz; do
+              curl -sS "https://purge.jsdelivr.net/gh/$repo@main/data/$path" > /dev/null
+            done
+            # Named here rather than left to the diff below, which cannot reach them: it is capped
+            # at 2000 paths and a refresh changes tens of thousands under data/anime/, which sorts
+            # first. A schedule file rewritten daily and never purged is a calendar that goes stale
+            # for half a day at a time, which is the one thing this file exists to prevent.
+            for month in $(ls data/schedule 2>/dev/null); do
+              curl -sS "https://purge.jsdelivr.net/gh/$repo@main/data/schedule/$month" > /dev/null
+            done
+            git diff --name-only HEAD~1 HEAD -- data \
+              | sed 's|^data/||' \
+              | head -n 2000 \
+              | xargs -P 16 -I {} curl -sS -o /dev/null \
+                  "https://purge.jsdelivr.net/gh/$repo@main/data/{}"
+          done

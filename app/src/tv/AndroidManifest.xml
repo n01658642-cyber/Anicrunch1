@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Fire TV ignores android:banner for sideloaded apps and draws the launcher icon, centred on a
+    grey 16:9 tile, instead. The phone icon's transparent rounded corners and small mark read as
+    a hole in that row, so the TV flavor ships a full-bleed square: the white mark on black.
+    It is a bare PNG in drawable-nodpi for the same reason the banner is: Fire OS has dropped
+    sideloaded icons it had to inflate from XML or resolve out of mipmap. Android TV launchers
+    still show the banner.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:icon="@drawable/tv_launcher_icon"
+        android:roundIcon="@drawable/tv_launcher_icon"
+        tools:replace="android:icon,android:roundIcon">
+
+        <!-- The launcher entry stays on MainActivity itself, exactly as before the phone flavor's
+             icon colours: a pinned Fire TV tile points at this component, and moving it would drop
+             every one of them. The TV icon does not follow the theme. -->
+        <activity android:name="com.anilili.MainActivity">
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

@@ -1,0 +1,559 @@
+"""Checks that the TMDB matching ported into konoha_build.py still agrees with TmdbClient.kt.
+
+Every case here is one the Kotlin names in a comment as having actually gone wrong. The two
+implementations decide the same thing for the same title, and when they drift a viewer sees another
+show's episodes illustrating this one — which is why the port is tested at all rather than trusted.
+
+Plain asserts and no pytest: this runs in the same bare venv the release scripts use, and adding a
+test dependency to publish an APK is not a trade worth making.
+
+    scripts/.venv/Scripts/python.exe scripts/test_konoha_build.py
+"""
+from __future__ import annotations
+
+import sys
+from datetime import datetime, timedelta, timezone
+
+from konoha_build import (
+    _iso_air_date,
+    anizip_airdates,
+    dated_run_agrees,
+    far_year_season,
+    movie_episode_title,
+    movies_to_episodes,
+    near_count_season,
+    forward_months,
+    hero_backdrop,
+    is_sequel,
+    normalize_title,
+    opens_when_season_does,
+    pick_backdrop,
+    pick_group,
+    pick_movie_run,
+    pick_season,
+    schedule_days,
+    schedule_query,
+    schedule_row,
+    schedule_rows,
+    series_logo,
+    series_search_query,
+    strip_format_markers,
+    titles_match,
+    to_episodes,
+    whole_series_seasons,
+)
+
+FAILURES: list[str] = []
+
+
+def check(label: str, actual: object, expected: object) -> None:
+    if actual != expected:
+        FAILURES.append(f"{label}\n    expected {expected!r}\n    got      {actual!r}")
+
+
+def media(romaji: str | None = None, english: str | None = None, native: str | None = None) -> dict:
+    return {"title": {"romaji": romaji, "english": english, "native": native}}
+
+
+# -- series_search_query -----------------------------------------------------------------------
+# TMDB indexes the series, not the season: "Youjo Senki II" returns nothing where "Youjo Senki"
+# returns the show it is the second season of.
+check("strips roman numeral", series_search_query("Youjo Senki II"), "Youjo Senki")
+check("strips ordinal season", series_search_query("Kaguya-sama 2nd Season"), "Kaguya-sama")
+check("strips numbered season", series_search_query("Overlord Season 4"), "Overlord")
+check("strips part", series_search_query("Jujutsu Kaisen Part 2"), "Jujutsu Kaisen")
+check("strips cour", series_search_query("Some Show Cour 2"), "Some Show")
+check("strips final season", series_search_query("Attack on Titan Final Season"), "Attack on Titan")
+check("leaves a plain title alone", series_search_query("Cowboy Bebop"), "Cowboy Bebop")
+check("empty is None", series_search_query("   "), None)
+
+# A roman numeral is only a season marker at the end of a title. Stripping it anywhere would maim
+# names that legitimately contain one.
+check("keeps interior numeral", series_search_query("Fate/stay night V Movie"), "Fate/stay night V Movie")
+
+# -- normalize_title ---------------------------------------------------------------------------
+# Punctuation, spacing and case never survive the trip between AniList and TMDB.
+check("spacing folded", normalize_title("Dan Da Dan"), normalize_title("Dandadan"))
+check("punctuation folded", normalize_title("Re:ZERO -Starting Life-"), "rezerostartinglife")
+
+# -- titles_match ------------------------------------------------------------------------------
+# The case the Kotlin calls out by id: the bundled map rates AniList 171018 (Dandadan) a
+# HIGH-confidence match for TMDB 274861, a 2024 Chinese drama. Believing it would have decorated
+# every episode row with that drama's stills.
+check(
+    "rejects the Dandadan mismatch",
+    titles_match(media(romaji="Dandadan"), {"name": "Melody of Golden Age", "original_name": "群星闪耀时"}),
+    False,
+)
+check(
+    "accepts a spacing variant",
+    titles_match(media(romaji="Dandadan"), {"name": "Dan Da Dan", "original_name": "ダンダダン"}),
+    True,
+)
+check(
+    "accepts containment",
+    titles_match(media(english="Attack on Titan"), {"name": "Attack on Titan: Final Season"}),
+    True,
+)
+# Below six characters a containment test stops meaning anything.
+check(
+    "refuses to match on a short title",
+    titles_match(media(romaji="Air"), {"name": "Airplane Stories"}),
+    False,
+)
+check("no titles is not a match", titles_match(media(), {"name": "Anything At All"}), False)
+
+# -- pick_season -------------------------------------------------------------------------------
+SEASONS = [
+    {"season_number": 0, "episode_count": 5, "air_date": "2024-01-01"},  # specials, never picked
+    {"season_number": 1, "episode_count": 12, "air_date": "2024-10-03"},
+    {"season_number": 2, "episode_count": 12, "air_date": "2025-07-04"},
+]
+check("count plus year", pick_season(SEASONS, 12, 2025), SEASONS[2])
+check("specials are never picked", pick_season(SEASONS, 5, 2024), None)
+
+# The trap the Kotlin documents: TMDB holds Dandadan's two AniList seasons as one season of 24
+# aired in 2024. A twelve-episode AniList season must not match it just because the year lines up,
+# or every row of the second season gets the wrong still.
+MERGED = [{"season_number": 1, "episode_count": 24, "air_date": "2024-10-03"}]
+check("wrong length is refused even when the year fits", pick_season(MERGED, 12, 2024), None)
+
+# A single season of the right length is still the answer when the year disagrees — that is a
+# season that started in December or slipped.
+SLIPPED = [{"season_number": 1, "episode_count": 12, "air_date": "2023-12-28"}]
+check("lone right-length season survives a wrong year", pick_season(SLIPPED, 12, 2024), SLIPPED[0])
+
+# Two seasons of the same length and neither year matching is genuinely ambiguous, so neither wins.
+AMBIGUOUS = [
+    {"season_number": 1, "episode_count": 12, "air_date": "2019-01-01"},
+    {"season_number": 2, "episode_count": 12, "air_date": "2021-01-01"},
+]
+check("ambiguous count with no year match", pick_season(AMBIGUOUS, 12, 2024), None)
+
+# Space Dandy, live: TMDB keeps its two cours as two seasons of thirteen, both aired in 2014, so
+# the year cannot separate them and the first in the list won — season two was given season one's
+# January episodes. Its start date can separate them, and does so to the day.
+TWO_COURS = [
+    {"season_number": 1, "episode_count": 13, "air_date": "2014-01-04"},
+    {"season_number": 2, "episode_count": 13, "air_date": "2014-07-06"},
+]
+check("the cour that started when this season did",
+      pick_season(TWO_COURS, 13, 2014, wanted_start="2014-07-06"), TWO_COURS[1])
+# AniList dates that same first season 5 January where TMDB dates it the 4th, which is what nearest
+# rather than exact is for: demanding equality would throw the match away over a day.
+check("a day apart is still the same broadcast",
+      pick_season(TWO_COURS, 13, 2014, wanted_start="2014-01-05"), TWO_COURS[0])
+# Without a date there is nothing new to say, and the old year rule still answers.
+check("no start date leaves the year rule in charge",
+      pick_season(TWO_COURS, 13, 2014), TWO_COURS[0])
+# The date is a tie-break among seasons of the right length, not a rule of its own: TMDB's merged
+# Dandadan season begins on exactly the day AniList's first season does, and taking it on the date
+# would undo the count rule directly above.
+check("an exact date cannot rescue a season of the wrong length",
+      pick_season(MERGED, 12, 2024, wanted_start="2024-10-03"), None)
+check("unambiguous single season with no count", pick_season(SLIPPED, None, None), SLIPPED[0])
+check("no real seasons", pick_season([{"season_number": 0, "episode_count": 3}], 3, 2024), None)
+
+# An unannounced sequel has no episode count on AniList, so nothing above catches it, and TMDB
+# keeps the whole run as one season. Taking that lone season gave "Dandadan 3rd Season" seasons one
+# and two's 24 episodes — a full episode list, with stills, for a show that has not aired.
+check("lone season refused for a sequel", pick_season(MERGED, None, 2027, sequel=True), None)
+check("lone season still taken for a series", pick_season(MERGED, None, 2027, sequel=False), MERGED[0])
+
+# -- far_year_season ---------------------------------------------------------------------------
+# Attack on Titan: AniList's Final Season Part 2 is twelve episodes from 2022, TMDB keeps the whole
+# Final Season as one season of 28, and its *second* season is twelve episodes from 2017. Twelve
+# was unique, so the count rule handed Part 2 the 2017 season and every viewer of one of the most
+# watched titles there is got another season's titles and stills.
+TITAN = [
+    {"season_number": 1, "episode_count": 25, "air_date": "2013-04-07"},
+    {"season_number": 2, "episode_count": 12, "air_date": "2017-04-01"},
+    {"season_number": 3, "episode_count": 22, "air_date": "2018-07-23"},
+    {"season_number": 4, "episode_count": 28, "air_date": "2020-12-07"},
+]
+check("count match five years out is not picked", pick_season(TITAN, 12, 2022), None)
+check("it is held for after the groups", far_year_season(TITAN, 12, 2022), TITAN[1])
+# The slipped season is the case the slack exists for, so it stays a first-class match and is not
+# also offered as a fallback.
+check("a year of slack is still a match", pick_season(SLIPPED, 12, 2024), SLIPPED[0])
+check("so it is not demoted", far_year_season(SLIPPED, 12, 2024), None)
+check("an exact year is never demoted", far_year_season(TITAN, 12, 2017), None)
+check("ambiguity is not a fallback either", far_year_season(AMBIGUOUS, 12, 2024), None)
+check("no count, nothing to demote", far_year_season(TITAN, None, 2022), None)
+
+# -- opens_when_season_does --------------------------------------------------------------------
+# The second half of the check on Fribb's named season. Fribb does not always distinguish a sequel
+# from the season it follows — it files Space Dandy and Space Dandy 2 as season 1 of the same
+# series — and both cours are thirteen episodes, so the length check passed on its own and the
+# second season was given the first's episodes.
+JANUARY = [{"air_date": "2014-01-04"}, {"air_date": "2014-01-11"}]
+check("a run that opens when the season did", opens_when_season_does(JANUARY, "2014-01-05"), True)
+check("a run that opens half a year out", opens_when_season_does(JANUARY, "2014-07-06"), False)
+# Nothing to compare is not evidence against a match, so it passes rather than discarding a season
+# over a date one side never stated.
+check("no start date to check against", opens_when_season_does(JANUARY, None), True)
+check("no air date on the run", opens_when_season_does([{"air_date": None}], "2014-07-06"), True)
+check("an empty run", opens_when_season_does([], "2014-07-06"), True)
+
+# -- _iso_air_date -----------------------------------------------------------------------------
+# A one-episode special is found by its date alone, so a partial date has to be refused rather than
+# padded: TMDB would match "2023-11-01" to a real episode that is not this one.
+check("full date", _iso_air_date({"year": 2023, "month": 11, "day": 5}), "2023-11-05")
+check("month and day are padded", _iso_air_date({"year": 2023, "month": 3, "day": 4}), "2023-03-04")
+check("a missing day is not a date", _iso_air_date({"year": 2023, "month": 11}), None)
+check("a year alone is not a date", _iso_air_date({"year": 2023}), None)
+check("no date at all", _iso_air_date(None), None)
+
+# -- is_sequel ---------------------------------------------------------------------------------
+check("ordinal season is a sequel", is_sequel(media(romaji="Dandadan 3rd Season")), True)
+check("numbered season is a sequel", is_sequel(media(english="Black Clover Season 2")), True)
+check("part is a sequel", is_sequel(media(romaji="Boruto Part 2")), True)
+check("trailing numeral is a sequel", is_sequel(media(romaji="Youjo Senki II")), True)
+# Sazae-san and Detective Conan have no AniList episode count either, but they are the series, not
+# a season of one — the fallback has to keep working for them or they lose thousands of episodes.
+check("plain title is not a sequel", is_sequel(media(romaji="Sazae-san")), False)
+check("Detective Conan is not a sequel", is_sequel(media(english="Detective Conan")), False)
+
+# -- whole_series_seasons ----------------------------------------------------------------------
+# One Piece: AniList states no total because it is still running, TMDB splits it into 23 broadcast
+# seasons, and matching on the 1999 start year selected season 1 alone — 61 episodes ending in
+# 2001. Every episode after that reached a device with no title and no still, and the app quietly
+# paid a live TMDB request per title to paper over it.
+LONG_RUN = [
+    {"season_number": 1, "episode_count": 61, "air_date": "1999-10-20"},
+    {"season_number": 2, "episode_count": 16, "air_date": None},
+    {"season_number": 3, "episode_count": 14, "air_date": None},
+]
+ongoing = {"title": {"romaji": "One Piece"}, "episodes": None}
+check(
+    "endless series takes every season",
+    [s["season_number"] for s in whole_series_seasons(ongoing, LONG_RUN, sequel=False)],
+    [1, 2, 3],
+)
+# A stated count binds to a single season and is the stronger signal, so the run is not taken.
+counted = {"title": {"romaji": "Some Show"}, "episodes": 12}
+check("a stated count wins", whole_series_seasons(counted, LONG_RUN, sequel=False), [])
+# Naruto Shippuden: a count that is every season added up is the whole series after all.
+summed = {"title": {"romaji": "Naruto: Shippuuden"}, "episodes": 91}
+check(
+    "a count equal to the whole run takes every season",
+    [s["season_number"] for s in whole_series_seasons(summed, LONG_RUN, sequel=False)],
+    [1, 2, 3],
+)
+# Its "Released Order" group files episode 11 fifth; a shuffled run is never a season.
+check(
+    "shuffled group run refused",
+    pick_group(
+        [{"name": "S1", "episodes": [
+            {"season_number": 1, "episode_number": n, "air_date": "2007-02-15" if n == 1 else None}
+            for n in (1, 2, 3, 4, 11, 5, 6)
+        ]}],
+        7, 2007, "2007-02-15",
+    ),
+    None,
+)
+# A named sequel is one season of a longer run; the run is the one thing it must not be given.
+check("sequel never takes the run", whole_series_seasons(ongoing, LONG_RUN, sequel=True), [])
+# Sazae-san and Detective Conan arrive as a single TMDB season, so there is nothing to concatenate
+# and the ordinary matching handles them exactly as before.
+SINGLE = [{"season_number": 1, "episode_count": 2650, "air_date": "1969-10-05"}]
+check("single season is left alone", whole_series_seasons(ongoing, SINGLE, sequel=False), [])
+# Specials are never part of the run.
+check(
+    "specials excluded from the run",
+    [s["season_number"] for s in whole_series_seasons(ongoing, [{"season_number": 0, "episode_count": 9}] + LONG_RUN, sequel=False)],
+    [1, 2, 3],
+)
+
+# -- pick_group --------------------------------------------------------------------------------
+GROUPS = [
+    {"name": "Season 1", "episodes": [{"air_date": "2024-10-03"}] * 12},
+    {"name": "Season 2", "episodes": [{"air_date": "2025-07-04"}] * 12},
+]
+check("group by count and first air year", pick_group(GROUPS, 12, 2025), GROUPS[1])
+check("empty groups", pick_group([{"name": "x", "episodes": []}], 12, 2025), None)
+
+# Bungou Stray Dogs, live and the reason any of this changed. Its whole 60-episode run is a single
+# TMDB season, so only the episode group can split it, and that group gives the second cour
+# thirteen episodes — its twelve plus the OVA AniList files separately. Thirteen is not twelve, so
+# the count rule refused it and the year handed the autumn 2016 season the spring 2016 one's twelve
+# episodes: every row of season two carried season one's title and still.
+COURS = [
+    {"name": "1", "episodes": [{"air_date": "2016-04-07"}] + [{"air_date": None}] * 11},
+    {"name": "2", "episodes": [{"air_date": "2016-10-06"}] + [{"air_date": None}] * 12},
+    {"name": "3", "episodes": [{"air_date": "2019-04-12"}] + [{"air_date": None}] * 11},
+]
+check("a run of the wrong length that starts on the right day",
+      pick_group(COURS, 12, 2016, wanted_start="2016-10-06"), COURS[1])
+check("the first cour is still its own", pick_group(COURS, 12, 2016, wanted_start="2016-04-07"), COURS[0])
+check("and a later year is unaffected", pick_group(COURS, 12, 2019, wanted_start="2019-04-12"), COURS[2])
+# Without a start date this is the behaviour that shipped, kept so the fix is the date and not a
+# silent change to everything else.
+check("no start date leaves the year rule in charge", pick_group(COURS, 12, 2016), COURS[0])
+# A run months away from the season is not it, whatever its length.
+check("no run near this season", pick_group(COURS, 24, 2025, wanted_start="2025-01-06"), None)
+check("group with no count match", pick_group(GROUPS, 24, 2025), None)
+# The Apothecary Diaries, live: the air-date grouping's specials run opens the day after season one.
+APOTHECARY = [
+    {"name": "Season 1", "episodes": [{"air_date": "2023-10-22"}] * 24},
+    {"name": "Season 2", "episodes": [{"air_date": "2025-01-10"}] * 24},
+    {"name": "Specials", "episodes": [{"air_date": "2023-10-23"}] * 50},
+]
+check("season one beside its specials run",
+      pick_group(APOTHECARY, 24, 2023, wanted_start="2023-10-22"), APOTHECARY[0])
+check("a specials run is never a season, even at its own length",
+      pick_group(APOTHECARY, 50, 2023, wanted_start="2023-10-23"), APOTHECARY[0])
+
+# -- to_episodes -------------------------------------------------------------------------------
+# Inside a merged run TMDB numbers the second season 13..24 while AniList, the providers and the
+# viewer all call them 1..12. Position is what survives both shapes.
+merged_run = [
+    {"episode_number": 13, "name": "Thirteen", "still_path": "/a.jpg", "air_date": "2025-07-04", "overview": "o"},
+    {"episode_number": 14, "name": "Fourteen", "still_path": None, "air_date": "2025-07-11", "overview": None},
+]
+rows = to_episodes(merged_run)
+check("renumbered from position", [row["number"] for row in rows], [1.0, 2.0])
+check("still becomes an absolute url", rows[0]["still"], "https://image.tmdb.org/t/p/w500/a.jpg")
+check("absent still stays null", rows[1]["still"], None)
+check("title carried", rows[0]["title"], "Thirteen")
+check("air date carried", rows[1]["air_date"], "2025-07-11")
+
+# An empty string is not a title, and shipping one would render a blank row rather than falling
+# back to the episode number.
+blank = to_episodes([{"episode_number": 1, "name": "", "still_path": "", "air_date": "", "overview": ""}])
+check("blank title becomes null", blank[0]["title"], None)
+check("blank still becomes null", blank[0]["still"], None)
+check("blank air date becomes null", blank[0]["air_date"], None)
+
+
+# -- schedule ----------------------------------------------------------------------------------
+# The month files are what the calendar draws from, so an off-by-one in the day windows is not a
+# misdrawn grid — it is a month of episodes filed under the wrong dates.
+
+sept = schedule_days("2026-09")
+check("a padded month is the month plus a week either side", len(sept), 30 + 14)
+check("starts a week before the first", sept[0][0], int(datetime(2026, 8, 25, tzinfo=timezone.utc).timestamp()))
+check("ends a week after the last", sept[-1][1], int(datetime(2026, 10, 8, tzinfo=timezone.utc).timestamp()))
+check("each window is one whole day", {end - start for start, end in sept}, {86400})
+check("windows are contiguous", [start for start, _ in sept[1:]], [end for _, end in sept[:-1]])
+
+# December has to roll the year, and February has to not assume 30.
+check("december rolls into january", len(schedule_days("2026-12")), 31 + 14)
+check("february is short", len(schedule_days("2027-02")), 28 + 14)
+check("a leap february is not", len(schedule_days("2028-02")), 29 + 14)
+
+# Half-open, the way the app's own day windows are: AniList compares strictly, so the bounds in the
+# query sit one second outside the day.
+query = schedule_query([(1_000_000, 1_086_400)])
+check("lower bound moved out by one", "airingAt_greater: 999999" in query, True)
+check("upper bound is the exclusive end", "airingAt_lesser: 1086400" in query, True)
+check("one alias per day", query.count(": Page("), 1)
+check("many days, one query", schedule_query(sept[:29]).count(": Page("), 29)
+
+# A row carries every title form because `title.preferred` in the app falls back english → romaji →
+# native; pre-picking one here would freeze the app's preference order into the dataset.
+airing = {
+    "episode": 5,
+    "airingAt": 1_700_000_000,
+    "media": {
+        "id": 21,
+        "title": {"english": "One Piece", "romaji": "ONE PIECE", "native": "ワンピース"},
+        "coverImage": {"extraLarge": "https://x/xl.jpg", "large": "https://x/l.jpg"},
+        "format": "TV",
+        "seasonYear": 1999,
+        "isAdult": False,
+    },
+}
+row = schedule_row(airing)
+check("cover prefers extraLarge", row["cover"], "https://x/xl.jpg")
+check("the titles the app actually picks from are carried", (row["english"], row["romaji"]),
+      ("One Piece", "ONE PIECE"))
+# `native` is the last rung of the app's fallback and is written only when the rungs above it are
+# missing — it is a full Japanese string on every row and carrying it always cost 28% of the file.
+check("native is dropped when a title has something above it", "native" in row, False)
+check(
+    "native is kept when it is the only title there is",
+    schedule_row({**airing, "media": {**airing["media"], "title": {"native": "ワンピース"}}})["native"],
+    "ワンピース",
+)
+check("a non-adult row says nothing at all", "adult" in row, False)
+check("an adult row is flagged", "adult" in schedule_row(
+    {**airing, "media": {**airing["media"], "isAdult": True}}), True)
+check("a schedule entry with no media is dropped", schedule_row({"episode": 1, "airingAt": 1}), None)
+
+# Rows are sorted and deduplicated because this file is rewritten daily and committed: an unstable
+# order is a changed file every day, a wasted purge, and a diff that says nothing.
+def _page(entries: list[dict]) -> dict:
+    return {"pageInfo": {"hasNextPage": False}, "airingSchedules": entries}
+
+
+def _entry(media_id: int, at: int) -> dict:
+    return {"episode": 1, "airingAt": at, "media": {"id": media_id, "title": {"romaji": "x"},
+            "coverImage": {"large": "l"}, "format": "TV", "seasonYear": 2026, "isAdult": False}}
+
+
+pages = {
+    "d0": _page([_entry(2, 300), _entry(1, 100), _entry(1, 100)]),
+    "d1": _page([_entry(3, 200), _entry(1, 400)]),
+}
+ordered = schedule_rows(pages, [(0, 1), (1, 2)], "2026-09")
+# Grouped by title and only then by time, which is what earns the 2.3x that `schedule_rows`
+# measured: one title's repeated name and cover URL have to sit inside gzip's window, and in time
+# order they do not. Asserting the times alone would pass for either ordering, so the ids are
+# checked with them.
+check("a title's airings stay adjacent, in time order within the title",
+      [(r["airingAt"], r["id"]) for r in ordered],
+      [(100, 1), (400, 1), (300, 2), (200, 3)])
+check("the same airing twice is one row", len(ordered), 4)
+check("a day AniList did not answer for is skipped", len(schedule_rows({}, [(0, 1)], "2026-09")), 0)
+
+# The forward window is the current month and the next, and has to roll the year like the rest.
+check("forward window", forward_months(2, datetime(2026, 9, 12, tzinfo=timezone.utc)), ["2026-09", "2026-10"])
+check("forward window rolls the year",
+      forward_months(3, datetime(2026, 11, 30, tzinfo=timezone.utc)), ["2026-11", "2026-12", "2027-01"])
+check("a window is never empty", forward_months(0, datetime(2026, 9, 12, tzinfo=timezone.utc)), ["2026-09"])
+
+
+# -- pick_movie_run ----------------------------------------------------------------------------
+# AniList 100049, Re:ZERO's two OVAs, which TMDB keeps as the films 532321 and 566451 — released on
+# exactly the entry's start and end dates. TMDB's /search/movie answer, measured 2026-09-27, also
+# carries 1351929, a 2016 film under the bare series name; only its date says it is something else.
+re_zero_ovas = {
+    "title": {
+        "romaji": "Re:Zero kara Hajimeru Isekai Seikatsu OVAs",
+        "english": "Re:ZERO -Starting Life in Another World- OVAs",
+        "native": "Re:ゼロから始める異世界生活 OVAs",
+    },
+    "format": "OVA",
+    "episodes": 2,
+    "startDate": {"year": 2018, "month": 10, "day": 6},
+    "endDate": {"year": 2019, "month": 11, "day": 8},
+}
+re_zero_films = [
+    {"id": 566451, "title": "Re:ZERO -Starting Life in Another World- The Frozen Bond",
+     "original_title": "Re:ゼロから始める異世界生活 氷結の絆", "release_date": "2019-11-08",
+     "backdrop_path": "/frozen.jpg"},
+    {"id": 1351929, "title": "Re:ZERO -Starting Life in Another World-",
+     "original_title": "Re:ゼロから始める異世界生活　劇場型悪意", "release_date": "2016-04-04"},
+    {"id": 532321, "title": "Re:ZERO -Starting Life in Another World- Memory Snow",
+     "original_title": "Re:ゼロから始める異世界生活 Memory Snow", "release_date": "2018-10-06",
+     "backdrop_path": "/snow.jpg"},
+]
+run = pick_movie_run(re_zero_ovas, re_zero_films)
+check("OVAs kept as films become the episodes, in release order",
+      [m["id"] for m in run or []], [532321, 566451])
+check("the episode title is the part after the series name",
+      [movie_episode_title(re_zero_ovas, m) for m in run or []], ["Memory Snow", "The Frozen Bond"])
+check("a film's backdrop stands in for the still",
+      [row["still"] for row in movies_to_episodes(re_zero_ovas, run or [])],
+      ["https://image.tmdb.org/t/p/w500/snow.jpg", "https://image.tmdb.org/t/p/w500/frozen.jpg"])
+check("films that do not account for the whole entry are refused",
+      pick_movie_run(re_zero_ovas, [f for f in re_zero_films if f["id"] == 532321]), None)
+check("a count that disagrees is refused", pick_movie_run({**re_zero_ovas, "episodes": 3}, re_zero_films), None)
+check("another title's film is never taken on its date alone",
+      pick_movie_run({**re_zero_ovas, "episodes": 1},
+                     [{"id": 9, "title": "Some Other Film", "original_title": "Some Other Film",
+                       "release_date": "2018-10-06"}]),
+      None)
+check("the format word is not part of the name",
+      strip_format_markers("Re:ZERO -Starting Life in Another World- OVAs"),
+      "Re:ZERO -Starting Life in Another World-")
+
+
+
+# -- series_logo -------------------------------------------------------------------------------
+# 86's logos are all Japanese-tagged on TMDB, so the English-first pass caches it with none; its
+# title is the numerals, which read in any language, so an override puts TVDB's back.
+check("an override beats the cached answer", series_logo(116589, {"logo": None}),
+      "https://artworks.thetvdb.com/banners/v4/series/378609/clearlogo/612011f341f15.png")
+check("the override covers a season the pass never crawled", series_logo(131586, {}),
+      "https://artworks.thetvdb.com/banners/v4/series/378609/clearlogo/612011f341f15.png")
+check("without an override the cached logo stands", series_logo(1, {"logo": "https://x/logo.png"}),
+      "https://x/logo.png")
+check("no override and no cached logo is no logo", series_logo(1, {"logo": None}), None)
+
+# -- pick_backdrop / hero_backdrop -------------------------------------------------------------
+# The hero sets the title over the picture's left side, so text already in the picture loses to a
+# lower-voted picture without it, and TheTVDB's fanart (text forbidden there) beats TMDB with text.
+W1280 = "https://image.tmdb.org/t/p/w1280"
+TEXT_FREE = {"file_path": "/free.jpg", "iso_639_1": None, "vote_average": 5.1, "vote_count": 2}
+TEXT_FREE_TOP = {"file_path": "/free-top.jpg", "iso_639_1": None, "vote_average": 5.4, "vote_count": 1}
+ENGLISH_TEXT = {"file_path": "/en.jpg", "iso_639_1": "en", "vote_average": 9.0, "vote_count": 40}
+FANART = ["https://artworks.thetvdb.com/banners/fanart/original/1.jpg"]
+check("text-free TMDB beats higher-voted TMDB with text",
+      pick_backdrop([ENGLISH_TEXT, TEXT_FREE], FANART), (W1280 + "/free.jpg", "tmdb"))
+check("text-free TMDB goes by votes",
+      pick_backdrop([TEXT_FREE, TEXT_FREE_TOP], []), (W1280 + "/free-top.jpg", "tmdb"))
+check("TheTVDB's fanart beats TMDB with text",
+      pick_backdrop([ENGLISH_TEXT], FANART), (FANART[0], "tvdb"))
+check("TMDB with text is the last resort",
+      pick_backdrop([ENGLISH_TEXT], []), (W1280 + "/en.jpg", "tmdb-text"))
+check("a backdrop with no file is not one",
+      pick_backdrop([{"file_path": "", "iso_639_1": None}], []), (None, None))
+check("a title with a banner is left out of backdrops.json",
+      hero_backdrop("https://s4.anilist.co/banner.jpg", {"backdrop": W1280 + "/free.jpg"}), None)
+check("a title without one gets the cached picture",
+      hero_backdrop(None, {"backdrop": W1280 + "/free.jpg"}), W1280 + "/free.jpg")
+check("a cache row from before backdrops gives none", hero_backdrop(None, {"logo": None}), None)
+
+# -- near_count_season / dated_run_agrees -----------------------------------------------------
+# CLANNAD is 23 episodes on AniList and season 1 of TMDB 24835 is 22: AniList counts the "Another
+# World" OVA that TMDB files under specials. Every exact-count rule refused it, so the dataset held
+# the series id and no episodes, and the app drew 23 black thumbnails.
+CLANNAD = [
+    {"season_number": 0, "episode_count": 5, "air_date": "2008-03-28"},
+    {"season_number": 1, "episode_count": 22, "air_date": "2007-10-05"},
+    {"season_number": 2, "episode_count": 22, "air_date": "2008-10-03"},
+]
+check("a season one short that opens the same day", near_count_season(CLANNAD, 23, "2007-10-05"), CLANNAD[1])
+check("After Story, two short", near_count_season(CLANNAD, 24, "2008-10-03"), CLANNAD[2])
+check("an opener a year out is not the season", near_count_season(CLANNAD, 23, "2006-10-05"), None)
+check("three short of 23 is too far", near_count_season(CLANNAD, 25, "2007-10-05"), None)
+check("two short of a 13-episode run is too far", near_count_season(
+    [{"season_number": 1, "episode_count": 11, "air_date": "2020-01-01"}], 13, "2020-01-01"), None)
+check("a short run gets no slack at all", near_count_season(
+    [{"season_number": 1, "episode_count": 2, "air_date": "2021-06-02"}], 3, "2021-06-02"), None)
+check("no start date, no opener to agree with", near_count_season(CLANNAD, 23, None), None)
+
+
+def weekly(first: str, count: int) -> list[str]:
+    start = datetime.strptime(first, "%Y-%m-%d")
+    return [(start + timedelta(days=7 * week)).strftime("%Y-%m-%d") for week in range(count)]
+
+
+CLANNAD_DATES = weekly("2007-10-05", 23)
+CLANNAD_RUN = [{"air_date": date} for date in CLANNAD_DATES[:22]]
+check("the run agrees date for date", dated_run_agrees(CLANNAD_RUN, CLANNAD_DATES, 23), True)
+check("a day either side still agrees", dated_run_agrees(
+    [{"air_date": d} for d in weekly("2008-01-08", 12)], weekly("2008-01-09", 12), 13), True)
+# Outlaw Star: TMDB's 16th episode is the one Japan never broadcast, so every episode after it sits a
+# place late. The count is two over and the opener agrees, which is exactly why dates are required.
+OUTLAW = [{"air_date": d} for d in weekly("1998-01-09", 15)] + [{"air_date": "1998-12-18"}] + [
+    {"air_date": d} for d in weekly("1998-04-24", 10)
+]
+check("an episode inserted mid-run is refused", dated_run_agrees(OUTLAW, weekly("1998-01-09", 24), 24), False)
+check("a date missing on either side is a refusal", dated_run_agrees(
+    CLANNAD_RUN, CLANNAD_DATES[:5] + [None] + CLANNAD_DATES[6:], 23), False)
+check("AniZip shorter than the run used is a refusal", dated_run_agrees(CLANNAD_RUN, CLANNAD_DATES[:10], 23), False)
+check("a longer run is judged only as far as the entry goes", dated_run_agrees(
+    [{"air_date": d} for d in weekly("2008-01-06", 12)] + [{"air_date": "2009-01-01"}],
+    weekly("2008-01-06", 12), 12), True)
+
+# AniZip's dates are kept in the `anizip` cache for the runner, which never asks AniZip itself.
+check("dates in episode order, specials ignored", anizip_airdates({"episodes": {
+    "2": {"airdate": "2007-10-12"}, "1": {"airDate": "2007-10-05T00:00:00Z"}, "S1": {"airdate": "2008-01-01"},
+}}), ["2007-10-05", "2007-10-12"])
+check("an undated episode keeps its place", anizip_airdates({"episodes": {
+    "1": {"airdate": "2007-10-05"}, "2": {}, "3": {"airdate": "2007-10-19"},
+}}), ["2007-10-05", None, "2007-10-19"])
+check("a gap in the numbering is no answer", anizip_airdates({"episodes": {
+    "1": {"airdate": "2007-10-05"}, "3": {"airdate": "2007-10-19"},
+}}), [])
+check("nothing known, nothing kept", anizip_airdates({}), [])
+
+if FAILURES:
+    print(f"{len(FAILURES)} failure(s):\n")
+    for failure in FAILURES:
+        print(f"  {failure}\n")
+    sys.exit(1)
+print("all matching checks passed")

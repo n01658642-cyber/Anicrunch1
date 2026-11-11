@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Anilili — Native anime streaming for Android &amp; TV</title>
+<meta name="description" content="Anilili is a free, native Android anime streaming app for phones, Android TV, and Fire TV with 20+ sources, offline downloads, and AniList/MAL sync." />
+<link rel="icon" type="image/png" href="assets/icon.png" />
+
+<!-- Open Graph -->
+<meta property="og:title" content="Anilili — Native anime streaming for Android &amp; TV" />
+<meta property="og:description" content="Free, open-source native anime streaming app with 20+ sources, sub &amp; dub, and offline downloads." />
+<meta property="og:image" content="assets/icon.png" />
+<meta name="theme-color" content="#08080a" />
+
+<!-- Seanime Fonts: Plus Jakarta Sans & JetBrains Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+<style>
+/* ───────────────────────── SEANIME THEMING & COLORS ───────────────────────── */
+:root {
+  --bg: #08080a;
+  --bg-card: rgba(15, 15, 20, 0.65);
+  --bg-card-hover: rgba(22, 22, 30, 0.85);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(56, 189, 248, 0.35);
+
+  /* Seanime Signature Accents (Cyan -> Indigo) */
+  --cyan: #38bdf8;
+  --indigo: #6366f1;
+  --purple: #a855f7;
+
+  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #6366f1 50%, #a855f7 100%);
+  --accent-glow: rgba(56, 189, 248, 0.22);
+
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dark: #64748b;
+
+  --font: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --max-width: 1200px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; color-scheme: dark; }
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(56, 189, 248, 0.25); color: #fff; }
+img { display: block; max-width: 100%; height: auto; }
+a { color: inherit; text-decoration: none; }
+
+.container {
+  width: min(var(--max-width), calc(100% - 48px));
+  margin-inline: auto;
+}
+
+/* ───────────────────────── BACKGROUND MESH GLOWS & GRID ───────────────────────── */
+.bg-glow-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-glow-cyan {
+  position: absolute;
+  top: -180px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1100px;
+  height: 650px;
+  background: radial-gradient(circle at center, rgba(56, 189, 248, 0.15) 0%, rgba(99, 102, 241, 0.08) 40%, transparent 70%);
+  filter: blur(90px);
+}
+
+.bg-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* ───────────────────────── NAVBAR ───────────────────────── */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(8, 8, 10, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 72px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.logo img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.logo-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: rgba(56, 189, 248, 0.1);
+  color: var(--cyan);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-weight: 500;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.nav-links a { transition: color 0.2s; }
+.nav-links a:hover { color: var(--text); }
+
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--text);
+  color: #08080a;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+
+.nav-btn:hover {
+  background: #fff;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+/* ───────────────────────── HERO SECTION ───────────────────────── */
+.hero {
+  position: relative;
+  padding-top: 90px;
+  padding-bottom: 90px;
+  z-index: 1;
+  text-align: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--cyan);
+  padding: 6px 16px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 28px;
+  backdrop-filter: blur(8px);
+}
+
+.badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan);
+}
+
+h1 {
+  font-size: clamp(2.8rem, 6.2vw, 4.8rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  max-width: 900px;
+  margin-inline: auto;
+}
+
+.gradient-text {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-sub {
+  margin-top: 24px;
+  font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+  color: var(--text-muted);
+  max-width: 640px;
+  margin-inline: auto;
+  font-weight: 400;
+}
+
+.hero-sub strong { color: var(--text); font-weight: 600; }
+
+.cta-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 38px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 13px 26px;
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0284c7 0%, #4f46e5 100%);
+  color: #fff;
+  box-shadow: 0 0 30px rgba(2, 132, 199, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0369a1 0%, #4338ca 100%);
+  box-shadow: 0 0 40px rgba(56, 189, 248, 0.45);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  backdrop-filter: blur(12px);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-glow);
+  transform: translateY(-2px);
+}
+
+.btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+/* Platform Bar */
+.platforms {
+  margin-top: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-dark);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: 8px;
+}
+
+.platform-chip svg { width: 14px; height: 14px; fill: var(--text-muted); }
+
+/* ───────────────────────── FEATURES GRID ───────────────────────── */
+.section {
+  position: relative;
+  padding-block: 100px;
+  z-index: 1;
+}
+
+.sec-header {
+  text-align: center;
+  max-width: 600px;
+  margin-inline: auto;
+  margin-bottom: 64px;
+}
+
+.sec-tag {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  font-weight: 600;
+}
+
+.sec-header h2 {
+  font-size: clamp(2rem, 3.5vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-top: 10px;
+}
+
+.sec-header p {
+  color: var(--text-muted);
+  margin-top: 12px;
+  font-size: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 32px;
+  backdrop-filter: blur(12px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+}
+
+.card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-glow);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5), 0 0 30px var(--accent-glow);
+}
+
+.card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cyan);
+  margin-bottom: 20px;
+}
+
+.card-icon svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+.card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.card p {
+  font-size: 14.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ───────────────────────── SCREENSHOT SLIDER ───────────────────────── */
+.shots-wrapper {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 24px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.shots-wrapper::-webkit-scrollbar { height: 6px; }
+.shots-wrapper::-webkit-scrollbar-track { background: var(--bg); }
+.shots-wrapper::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 99px; }
+
+.shot-item {
+  flex: 0 0 auto;
+  width: 260px;
+  scroll-snap-align: start;
+}
+
+.shot-item img {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #0d0e12;
+  transition: transform 0.3s, border-color 0.3s;
+}
+
+.shot-item:hover img {
+  border-color: var(--border-glow);
+  transform: scale(1.02);
+}
+
+.shot-caption {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ───────────────────────── DOWNLOAD PANEL ───────────────────────── */
+.dl-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.dl-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px;
+  backdrop-filter: blur(12px);
+}
+
+.dl-box h3 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.dl-ver {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dark);
+  margin-bottom: 24px;
+}
+
+.dl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dl-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+
+.dl-link:hover {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: var(--cyan);
+  transform: translateX(4px);
+}
+
+.dl-info .name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dl-info .desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tag-rec {
+  background: var(--cyan);
+  color: #08080a;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.dl-arrow {
+  color: var(--text-muted);
+  font-size: 18px;
+  transition: transform 0.2s;
+}
+
+.dl-link:hover .dl-arrow {
+  color: var(--cyan);
+  transform: translateY(2px);
+}
+
+/* Steps list */
+.steps-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.steps-list li {
+  display: flex;
+  gap: 14px;
+  font-size: 14.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.step-num {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ───────────────────────── FOOTER ───────────────────────── */
+footer {
+  border-top: 1px solid var(--border);
+  padding-block: 60px 40px;
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+
+.foot-links {
+  display: flex;
+  justify-content: center;
+  gap: 28px;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.foot-links a:hover { color: var(--cyan); }
+
+.disclaimer {
+  max-width: 600px;
+  margin-inline: auto;
+  font-size: 12.5px;
+  color: var(--text-dark);
+  line-height: 1.6;
+}
+
+/* Responsive */
+@media (max-width: 860px) {
+  .nav-links { display: none; }
+  .dl-grid { grid-template-columns: 1fr; }
+  .hero { padding-top: 50px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Background Glow Effects -->
+<div class="bg-glow-container">
+  <div class="bg-glow-cyan"></div>
+  <div class="bg-grid"></div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="container nav-wrapper">
+    <div class="logo">
+      <img src="assets/icon.png" alt="Anilili Logo" />
+      <span>Anilili</span>
+      <span class="logo-tag">v0.1.47</span>
+    </div>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#screens">Screenshots</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/OWNER/Anilili" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <a href="#download" class="nav-btn">
+      Download APK
+    </a>
+  </div>
+</header>
+
+<!-- Hero Section -->
+<section class="hero">
+  <div class="container">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      Native Android &amp; TV Client
+    </div>
+
+    <h1>
+      Stream anime seamlessly across <br />
+      <span class="gradient-text">all your Android devices.</span>
+    </h1>
+
+    <p class="hero-sub">
+      An ad-free, open-source streaming app with <strong>20+ sources</strong>, automatic fallback, offline downloads, full TV remote navigation, and AniList sync.
+    </p>
+
+    <div class="cta-group">
+      <a href="https://discord.gg/Anilili" class="btn btn-primary">
+        <svg viewBox="0 0 24 24"><path d="M12 3v10.55l3.3-3.3 1.4 1.42L12 16.4l-4.7-4.72 1.4-1.42 3.3 3.3V3h2zM5 19h14v2H5v-2z"/></svg>
+        Download Universal APK
+      </a>
+      <a href="https://discord.gg/Anilili" target="_blank" rel="noopener" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24"><path d="M21.9 4.6c.3-1.2-.9-2.2-2-1.7L2.7 9.9c-1.2.5-1.1 2.2.1 2.6l4.7 1.5 1.8 5.6c.4 1.1 1.8 1.4 2.6.5l2.6-2.7 4.8 3.5c1 .7 2.4.2 2.7-1l3-15.3h-.1zM9.4 13.1l8.7-5.5c.4-.2.8.3.4.6l-7.2 6.7-.3 3.1-1.6-4.9z"/></svg>
+        Join Discord
+      </a>
+    </div>
+
+    <div class="platforms">
+      <div class="platform-chip">
+        <svg viewBox="0 0 24 24"><path d="M17.52 14.33c-.25 0-.46-.21-.46-.46s.21-.46.46-.46.46.21.46.46-.21.46-.46.46m-11.04 0c-.25 0-.46-.21-.46-.46s.21-.46.46-.46.46.21.46.46-.21.46-.46.46m11.4-6.02l1.99-3.45c.11-.19.04-.44-.15-.55-.19-.11-.44-.04-.55.15l-2.02 3.5c-1.48-.68-3.13-1.07-4.91-1.07s-3.43.39-4.91 1.07L5.31 4.46c-.11-.19-.36-.26-.55-.15-.19.11-.26.36-.15.55l1.99 3.45C3.38 10.19 1.15 13.31 1 17h22c-.15-3.69-2.38-6.81-5.62-8.69"/></svg>
+        Android 5.1+
+      </div>
+      <div class="platform-chip">
+        <svg viewBox="0 0 24 24"><path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 1.99-.9 1.99-2L23 5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/></svg>
+        Android TV
+      </div>
+      <div class="platform-chip">
+        <svg viewBox="0 0 24 24"><path d="M13.5 2c-5.2 0-9.5 4.3-9.5 9.5c0 2.2.8 4.3 2.1 5.9L3 21l3.7-3.1c1.8 1.3 4 2.1 6.8 2.1c5.2 0 9.5-4.3 9.5-9.5S18.7 2 13.5 2z"/></svg>
+        Fire TV / Stick
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features Section -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="sec-header">
+      <span class="sec-tag">Engineered for Anime</span>
+      <h2>Everything you need for a perfect watch</h2>
+      <p>Built completely native with Jetpack Compose. Fast, responsive, and lightweight.</p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v11H4z"/><path d="M9 20h6M12 16v4"/></svg>
+        </div>
+        <h3>20+ Built-in Sources</h3>
+        <p>Streams resolve instantly across Miruro, Senshi, KickAssAnime, AniBD, AllAnime, and more with intelligent automatic failover.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+        </div>
+        <h3>Sub &amp; Dub Filtering</h3>
+        <p>Filter servers by audio track or subtitle language. Access Hindi, French, Spanish, or English dubs instantly.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/></svg>
+        </div>
+        <h3>Offline Downloads</h3>
+        <p>Save full episodes with subtitle tracks directly to your storage for offline playback wherever you go.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M6 21h12"/></svg>
+        </div>
+        <h3>Dedicated TV Layout</h3>
+        <p>Purpose-built leanback interface engineered specifically for Android TV and Fire TV sticks with D-pad navigation.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><path d="M20 7 9 18l-5-5"/></svg>
+        </div>
+        <h3>AniList &amp; MAL Sync</h3>
+        <p>Keep your watchlist updated effortlessly. Anilili auto-tracks and writes episode progress back to your accounts.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24"><path d="m4 4 7 8-7 8"/><path d="M13 20h7"/></svg>
+        </div>
+        <h3>AniSkip Intro Skip</h3>
+        <p>Automatically skip openings and endings with precise crowd-sourced timestamps powered by AniSkip.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Screenshots Section -->
+<section class="section" id="screens">
+  <div class="container">
+    <div class="sec-header">
+      <span class="sec-tag">Interface Showcase</span>
+      <h2>Designed to feel right at home</h2>
+      <p>Clean, distraction-free navigation optimized for both touchscreens and remotes.</p>
+    </div>
+
+    <div class="shots-wrapper">
+      <div class="shot-item">
+        <img src="assets/01-home.webp" alt="Home Screen" loading="lazy" />
+        <div class="shot-caption">Home</div>
+      </div>
+      <div class="shot-item">
+        <img src="assets/03-search.webp" alt="Search Screen" loading="lazy" />
+        <div class="shot-caption">Search &amp; Filter</div>
+      </div>
+      <div class="shot-item">
+        <img src="assets/04-details.webp" alt="Details Screen" loading="lazy" />
+        <div class="shot-caption">Media Details</div>
+      </div>
+      <div class="shot-item">
+        <img src="assets/05-watch.webp" alt="Watch Screen" loading="lazy" />
+        <div class="shot-caption">Episodes List</div>
+      </div>
+      <div class="shot-item">
+        <img src="assets/06-player-controls.webp" alt="Player Controls" loading="lazy" />
+        <div class="shot-caption">Native Player</div>
+      </div>
+      <div class="shot-item">
+        <img src="assets/07-library.webp" alt="Library Screen" loading="lazy" />
+        <div class="shot-caption">Library &amp; Downloads</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Download Section -->
+<section class="section" id="download">
+  <div class="container">
+    <div class="sec-header">
+      <span class="sec-tag">Get Started</span>
+      <h2>Download Anilili APK</h2>
+      <p>Safe, signed, and ad-free. Built-in auto-updater included.</p>
+    </div>
+
+    <div class="dl-grid">
+      <div class="dl-box">
+        <h3>Direct APK Downloads</h3>
+        <div class="dl-ver">Latest Release • v0.1.47 • Open Source</div>
+
+        <div class="dl-list">
+          <a href="https://discord.gg/Anilili" class="dl-link">
+            <div class="dl-info">
+              <div class="name">
+                Anilili.apk
+                <span class="tag-rec">Universal</span>
+              </div>
+              <div class="desc">Recommended — runs on all phones, tablets &amp; TV boxes</div>
+            </div>
+            <div class="dl-arrow">↓</div>
+          </a>
+
+          <a href="https://discord.gg/Anilili" class="dl-link">
+            <div class="dl-info">
+              <div class="name">Anilili_arm64-v8a.apk</div>
+              <div class="desc">For modern 64-bit Android smartphones &amp; TV devices</div>
+            </div>
+            <div class="dl-arrow">↓</div>
+          </a>
+
+          <a href="https://discord.gg/Anilili" class="dl-link">
+            <div class="dl-info">
+              <div class="name">Anilili_armeabi-v7a.apk</div>
+              <div class="desc">For legacy 32-bit devices &amp; Fire OS 5 TV Sticks</div>
+            </div>
+            <div class="dl-arrow">↓</div>
+          </a>
+        </div>
+      </div>
+
+      <div class="dl-box">
+        <h3>Quick Setup Guide</h3>
+        <ol class="steps-list">
+          <li>
+            <span class="step-num">1</span>
+            <span>Download the <strong>Universal APK</strong> above directly to your device.</span>
+          </li>
+          <li>
+            <span class="step-num">2</span>
+            <span>When prompted by Android, allow installs from unknown sources.</span>
+          </li>
+          <li>
+            <span class="step-num">3</span>
+            <span>Open the APK file and tap <strong>Install</strong>. On TV sticks, use the <em>Downloader</em> app.</span>
+          </li>
+          <li>
+            <span class="step-num">4</span>
+            <span>In-app auto-updates will notify you when a new release is available!</span>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="foot-links">
+      <a href="https://github.com/OWNER/Anilili" target="_blank" rel="noopener">GitHub Repository</a>
+      <a href="https://github.com/OWNER/Anilili/releases" target="_blank" rel="noopener">All Releases</a>
+      <a href="https://discord.gg/Anilili" target="_blank" rel="noopener">Discord Community</a>
+    </div>
+
+    <p class="disclaimer">
+      Anilili is an open-source educational project and does not host content on its own servers. All streams are resolved dynamically from public third-party services. Not affiliated with AniList or MyAnimeList.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
