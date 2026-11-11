@@ -1,0 +1,4 @@
+coincurve>=19
+curl_cffi>=0.7
+requests>=2.31
+websocket-client>=1.7

@@ -1,0 +1,2386 @@
+"""Build the anime metadata dataset the app reads in place of AlokRepo/Konoha.
+
+Konoha was a third-party static mirror of AniList + TMDB served over jsDelivr. It stopped: its
+`sync-status.json` still reads `lastFinishedYear: 2010`, `stats.json` was last written 2026-06-08
+and `airing.json` was last checked 2026-05-19. Anything that aired since is thin or absent, which
+is why `TmdbClient` exists at all — it fills the gaps Konoha left, one live request at a time, for
+every viewer.
+
+This rebuilds the same tree from the primary sources so the gaps stop being gaps. The output layout
+is byte-for-byte the shape `KonohaClient` already parses, so pointing the app at it is a base-URL
+change and nothing else.
+
+The TMDB half is a deliberate port of `TmdbClient.kt`, not a fresh implementation. That file
+encodes matching rules that were learned from real failures — an exact episode count binds harder
+than a matching year, a season marker has to come off the title before searching, and the bundled
+id-map's own `confidence` cannot be believed (it rates Dandadan a HIGH match for a 2024 Chinese
+drama). Re-deriving those here would mean re-learning them. Where the two must agree, the Kotlin is
+the source of truth and this follows it; see `pick_season`, `pick_group` and `titles_match`.
+
+Stages are separate commands because they fail differently and the expensive one must be resumable:
+
+    catalog     Walk AniList for every anime. ~20,800 titles, ~25 min (AniList is the slow one).
+    episodes    Ask TMDB for episode lists. ~15,000 titles, ~20 min at 8 workers. Resumable.
+    emit        Write the publishable tree from what the first two cached.
+    schedule    Write per-month airing times for the calendar. 2 requests a month, seconds.
+    assets      Copy the bundled files into app/src/main/assets/.
+
+A daily refresh is `catalog` + `episodes --airing-only` + `emit` + `schedule`, which only touches
+titles that can still change.
+
+Usage:
+    scripts/.venv/Scripts/python.exe scripts/konoha_build.py catalog
+    scripts/.venv/Scripts/python.exe scripts/konoha_build.py episodes --airing-only
+    scripts/.venv/Scripts/python.exe scripts/konoha_build.py emit --out build/konoha/data
+    scripts/.venv/Scripts/python.exe scripts/konoha_build.py assets --out build/konoha/data
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import re
+import shutil
+import sys
+import threading
+import time
+import typing
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+
+import requests
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+WORK = ROOT / "build" / "konoha"
+CATALOG_FILE = WORK / "catalog.json"
+EPISODE_DIR = WORK / "episodes"
+ANIZIP_DIR = WORK / "anizip"
+ASSETS = ROOT / "app/src/main/assets"
+
+ANILIST_API = "https://graphql.anilist.co"
+TMDB_API = "https://api.themoviedb.org/3"
+TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w500"
+# Logos at w500: wide enough for the TV detail header, and still a PNG with its transparency.
+TMDB_LOGO_BASE = "https://image.tmdb.org/t/p/w500"
+# Backdrops at w1280, the size the app's own live lookup asks for: the TV hero draws one across
+# about two thirds of a 1080p screen, and `original` is several megabytes for no visible gain.
+TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
+
+# AniZip: a keyless mapping service that answers for one AniList id with TheTVDB's artwork and
+# episode rows. Two fields here are things no other source in this build has:
+#
+#   images[].Clearlogo   the series' name as its own transparent PNG. AniList publishes a cover and
+#                        a banner, both pictures of the show; TMDB the same. A ten-foot header that
+#                        sets the title in the app's font looks like a database, not like the show.
+#   episodes[].rating    what viewers scored one episode. TMDB states `vote_average` only for the
+#                        seasons somebody has voted on, which is almost none of this catalogue.
+#
+# Measured coverage 2026-09-21, sampling the published index: 38 of the 40 most popular titles have
+# a logo (the two misses are films) and all 40 have episode ratings; across 40 drawn at random from
+# all 20,811 it falls to 11 and 15. That shape is the right way round — the long tail nobody opens
+# is where the gaps are — and it is why the fields are optional everywhere downstream rather than
+# something the app waits for.
+ANIZIP_API = "https://api.ani.zip/mappings"
+
+# AniZip is a small community service and this walks the whole catalogue against it. One request at
+# a time with a gap between them: a full pass is unattended and slow either way, and there is no
+# version of this that is worth being the reason the service falls over.
+ANIZIP_MIN_INTERVAL = 0.25
+
+# Fribb's anime-lists: a community cross-reference pairing an AniList id with its AniDB, MAL, Kitsu,
+# Simkl, TVDB and TMDB ids, and — the part nothing else states — which TMDB *season* that AniList
+# entry is. Rebuilt weekly from AniDB's anime-list, public, no key.
+#
+# It is the answer to the question `pick_season` otherwise has to guess at from episode counts and
+# air years. It covers 91% of the catalogue and states a season for about a third of it; the
+# heuristic still runs for the rest, and still runs when what it claims does not check out.
+FRIBB_URL = "https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json"
+FRIBB_FILE = WORK / "fribb-mini.json"
+FRIBB_MAX_AGE_S = 3 * 24 * 60 * 60
+
+# Formats whose titles have an episode list worth fetching. A movie has one "episode" and TMDB
+# indexes it under /movie, which carries no stills per part; asking costs two requests for nothing.
+EPISODIC_FORMATS = {"TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"}
+
+# AniList stops paging at 5000 entries, so 100 pages of 50 is the hard ceiling for any one filter.
+MAX_PARTITION_PAGES = 100
+
+# Requests held back from the published budget. AniList advertises 90/min but degrades to 30
+# without changing the header, so pacing that spends the advertised budget exactly still 429s.
+RATE_BUFFER = 5
+
+# Seconds between AniList requests. 2.0 is the degraded ceiling of 30/min; starting there costs a
+# few minutes on a healthy day and saves an hour on a degraded one, because a 429 is not a cheap
+# retry — it is ~55s of Retry-After plus a wait to the window reset.
+MIN_INTERVAL = 2.0
+INTERVAL_STEP = 0.5
+MAX_INTERVAL = 6.0
+
+# A month's schedule file covers the month plus a week either side, so one file serves a whole
+# calendar grid — including the neighbouring days that finish its first and last weeks — in any
+# device timezone. See `schedule_days`.
+SCHEDULE_PAD_DAYS = 7
+
+# Days per aliased schedule request. AniList caps query complexity at 500 and this selection costs
+# 18 a day — 17 for the fields plus one for the `pageInfo` that catches an overflowing day — so 27
+# is what fits. 29 is answered with "Max query complexity should be 500 but got 522", and the 400
+# carries no partial result. A month plus its padding is two requests either way.
+SCHEDULE_DAYS_PER_REQUEST = 27
+
+# AniList caps perPage at 50 however it is asked. The busiest day measured over a year was 33, so a
+# day has never needed a second page — `schedule_rows` warns rather than paging if one ever does.
+SCHEDULE_PAGE_SIZE = 50
+
+# Walked one broadcast year at a time, because a straight paged walk cannot reach the end of the
+# catalogue: AniList refuses any request whose offset passes 5000 entries ("Page depth exceeds
+# maximum allowed for API requests"), which at 50 per page is page 101 and AniList id ~7528 — about
+# a quarter of what exists. There is no `id_greater` on Media to window by, but `startDate_greater`
+# and `startDate_lesser` are accepted, and no single year comes close to 5000 titles, so each year
+# pages to exhaustion on its own.
+#
+# `pageInfo.total` is not usable as a count here: it reports the 5000 cap for every filter, so the
+# walk stops on `hasNextPage` rather than on a total.
+#
+# A year partition only sees titles that have a start date. Announcements that have none are picked
+# up by a separate NOT_YET_RELEASED sweep, which is why $status is on the same query.
+CATALOG_QUERY = """
+query ($page: Int!, $perPage: Int!, $greater: FuzzyDateInt, $lesser: FuzzyDateInt, $status: MediaStatus) {
+  Page(page: $page, perPage: $perPage) {
+    pageInfo { hasNextPage currentPage }
+    media(
+      type: ANIME
+      sort: ID
+      startDate_greater: $greater
+      startDate_lesser: $lesser
+      status: $status
+    ) {
+      id
+      idMal
+      title { romaji english native userPreferred }
+      description(asHtml: false)
+      coverImage { large extraLarge color }
+      bannerImage
+      format
+      status
+      season
+      seasonYear
+      episodes
+      duration
+      genres
+      averageScore
+      meanScore
+      popularity
+      favourites
+      isAdult
+      countryOfOrigin
+      tags { name rank isMediaSpoiler isGeneralSpoiler }
+      studios { nodes { id name isAnimationStudio } }
+      trailer { id site thumbnail }
+      startDate { year month day }
+      endDate { year month day }
+      nextAiringEpisode { episode airingAt }
+      relations { edges { relationType node { %(node)s } } }
+      recommendations(perPage: 10, sort: RATING_DESC) { nodes { rating mediaRecommendation { %(node)s } } }
+    }
+  }
+}
+""" % {
+    # What a card or a season tab needs of a title that is not the one on screen — the app's own
+    # `Media` decodes it, every field it lacks defaulting.
+    "node": "id idMal title { romaji english native userPreferred } coverImage { large extraLarge color } "
+    "bannerImage format status episodes duration season seasonYear averageScore popularity isAdult "
+    "countryOfOrigin genres startDate { year month day }",
+}
+
+
+# --------------------------------------------------------------------------------------------
+# Title matching — ported from TmdbClient.kt. Keep in step with it.
+# --------------------------------------------------------------------------------------------
+
+WHITESPACE = re.compile(r"\s+")
+
+SEASON_MARKERS = [
+    re.compile(r"\b\d+(st|nd|rd|th)\s+season\b", re.I),
+    re.compile(r"\bseason\s*\d+\b", re.I),
+    re.compile(r"\bpart\s*\d+\b", re.I),
+    re.compile(r"\bcour\s*\d+\b", re.I),
+    re.compile(r"\bfinal\s+season\b", re.I),
+    re.compile(r"\s+(ii|iii|iv|v|vi|vii|viii|ix|x)\s*$", re.I),
+]
+
+# Below this a containment test stops meaning anything — "one" is inside a great many titles.
+MIN_TITLE_LENGTH = 6
+
+# The TMDB grouping types that split a run by when it aired, most trusted first: production (6),
+# original air date (1) and TV (7). Which one a series' editors used is arbitrary — Dandadan and
+# Re:Zero carry a production split, while The Apothecary Diaries keeps all 60 episodes as one season
+# and splits them only by air date ("Seasons") and TV ("Cours"), so reading production alone left
+# both of its AniList seasons with no episode list. Absolute, DVD, digital and story-arc groupings
+# are not the broadcast seasons.
+SEASONS_GROUP_TYPES = (6, 1, 7)
+# Re:Zero carries eight groupings; trying them all would cost more than the stills are worth.
+MAX_GROUPS_TRIED = 3
+# TMDB files everything that is not a numbered season under season 0.
+SPECIALS_SEASON = 0
+# How far a TMDB season's first-episode year may sit from AniList's, and still be the same season.
+SEASON_YEAR_SLACK = 1
+# How far a run's opening episode may sit from AniList's start date and still be that season's
+# first. Wide enough for a premiere screened early or held back a fortnight, and nowhere near the
+# months that separate one season from the next. Matches the app's own SEASON_OPENER_TOLERANCE_DAYS.
+SEASON_OPENER_TOLERANCE_DAYS = 21
+# A near-count season (see `near_count_season`) must agree with AniZip's broadcast date at every
+# episode it is used for, to within this many days: enough for a midnight broadcast filed on either
+# side of it, and less than the week that separates one weekly episode from the next.
+NEAR_COUNT_DATE_TOLERANCE_DAYS = 2
+# Below this many episodes, one episode off is too large a share of the run to call it the same one.
+NEAR_COUNT_MIN_EPISODES = 4
+
+
+def series_search_query(raw: str | None) -> str | None:
+    """A title as the name of its *series* rather than of one season.
+
+    TMDB indexes the show and splits it into seasons underneath, so a season's own name finds
+    nothing: "Youjo Senki II" returns no results where "Youjo Senki" returns the show it is the
+    second season of. Which season then gets used is decided separately, by count and year.
+    """
+    if not raw or not raw.strip():
+        return None
+    text = raw
+    for marker in SEASON_MARKERS:
+        text = marker.sub(" ", text)
+    text = WHITESPACE.sub(" ", text).strip()
+    return text or None
+
+
+def normalize_title(raw: str | None) -> str:
+    """Titles reduced to what two catalogues can be expected to agree on.
+
+    Punctuation, spacing and case never survive the trip between AniList and TMDB — "Dandadan"
+    against "Dan Da Dan" is the normal case, not the exception.
+    """
+    base = series_search_query(raw) or ""
+    return "".join(ch for ch in base.lower() if ch.isalnum())
+
+
+def titles_match(entry: dict, candidate: dict) -> bool:
+    """Whether a TMDB record is plausibly the same show as an AniList one.
+
+    Deliberately strict about the thing that goes wrong. A mismatch does not show up as a missing
+    thumbnail, which a viewer shrugs at, but as another show's episodes illustrating this one.
+    """
+    titles = entry.get("title") or {}
+    ours = [
+        normalize_title(titles.get("romaji")),
+        normalize_title(titles.get("english")),
+        normalize_title(titles.get("native")),
+    ]
+    ours = [t for t in ours if len(t) >= MIN_TITLE_LENGTH]
+    theirs = [normalize_title(candidate.get("name")), normalize_title(candidate.get("original_name"))]
+    theirs = [t for t in theirs if len(t) >= MIN_TITLE_LENGTH]
+    if not ours or not theirs:
+        return False
+    return any(mine == other or mine in other or other in mine for mine in ours for other in theirs)
+
+
+def _year_of(date: str | None) -> int | None:
+    if not date or len(date) < 4:
+        return None
+    try:
+        return int(date[:4])
+    except ValueError:
+        return None
+
+
+# The AniList formats whose episodes TMDB may keep as films instead of as a season, and how many
+# films one entry may stand for before that stops being the pattern. Mirrors TmdbClient.kt.
+MOVIE_RUN_FORMATS = {"MOVIE", "OVA", "ONA", "SPECIAL"}
+MAX_MOVIE_RUN = 6
+
+FORMAT_MARKERS = re.compile(
+    r"\b(the\s+movie|movies?|gekijou-?ban|ovas?|oads?|onas?|specials?)\b", re.I
+)
+
+
+def strip_format_markers(raw: str | None) -> str | None:
+    """A title without the words that say what kind of release it is rather than what it is called."""
+    if not raw or not raw.strip():
+        return None
+    text = WHITESPACE.sub(" ", FORMAT_MARKERS.sub(" ", raw)).strip()
+    return text or None
+
+
+def movie_search_queries(entry: dict) -> list[str]:
+    """What to search TMDB's films for: each title as written, and without its format word."""
+    titles = entry.get("title") or {}
+    queries: list[str] = []
+    for raw in (titles.get("english"), titles.get("romaji")):
+        for candidate in (raw.strip() if raw else None, strip_format_markers(raw)):
+            if candidate and candidate not in queries:
+                queries.append(candidate)
+    return queries
+
+
+def _whole_date(value: dict | None) -> datetime | None:
+    iso = _iso_air_date(value)
+    return datetime.strptime(iso, "%Y-%m-%d") if iso else None
+
+
+def pick_movie_run(entry: dict, movies: list[dict]) -> list[dict] | None:
+    """The films that are an entry's episodes, in episode order, or None unless they account for it.
+
+    Port of `pickMovieRun`. Each film's title must contain the entry's own name once "OVA"/"Movie"
+    are taken off it; each must be released within the entry's run, start date to end date, with the
+    slack a season opener gets; and the count must equal the entry's episode count. Re:ZERO's OVAs
+    (AniList 100049) are TMDB films 532321 and 566451, released on exactly its start and end dates;
+    the date window is what keeps out the 2016 film TMDB files under the bare series name.
+    """
+    wanted = entry.get("episodes")
+    start = _whole_date(entry.get("startDate"))
+    if not wanted or not start:
+        return None
+    end = _whole_date(entry.get("endDate")) or start
+    titles = entry.get("title") or {}
+    bases = []
+    for raw in (titles.get("romaji"), titles.get("english"), titles.get("native")):
+        base = normalize_title(strip_format_markers(raw))
+        if len(base) >= MIN_TITLE_LENGTH and base not in bases:
+            bases.append(base)
+    if not bases:
+        return None
+    slack = timedelta(days=SEASON_OPENER_TOLERANCE_DAYS)
+    seen: set[int] = set()
+    run = []
+    for movie in movies:
+        if movie.get("id") in seen:
+            continue
+        seen.add(movie.get("id"))
+        try:
+            released = datetime.strptime((movie.get("release_date") or "")[:10], "%Y-%m-%d")
+        except ValueError:
+            continue
+        if released < start - slack or released > end + slack:
+            continue
+        theirs = [normalize_title(movie.get(k)) for k in ("title", "original_title")]
+        if any(base in title for title in theirs if title for base in bases):
+            run.append(movie)
+    run.sort(key=lambda m: m.get("release_date") or "")
+    return run if len(run) == wanted else None
+
+
+def movie_episode_title(entry: dict, movie: dict) -> str | None:
+    """A film's title as an episode title: the part after the series name ("Memory Snow")."""
+    title = (movie.get("title") or "").strip()
+    if not title:
+        return None
+    titles = entry.get("title") or {}
+    for raw in (titles.get("english"), titles.get("romaji")):
+        prefix = strip_format_markers(raw)
+        if prefix and len(prefix) >= MIN_TITLE_LENGTH and title.lower().startswith(prefix.lower()):
+            rest = title[len(prefix):].strip(" -:–—~")
+            return rest or title
+    return title
+
+
+def movies_to_episodes(entry: dict, run: list[dict]) -> list[dict]:
+    """A run of films in Konoha's episode shape; a film's backdrop stands in for a still."""
+    return to_episodes(
+        [
+            {
+                "name": movie_episode_title(entry, movie),
+                "overview": movie.get("overview"),
+                "air_date": movie.get("release_date"),
+                "still_path": movie.get("backdrop_path"),
+            }
+            for movie in run
+        ]
+    )
+
+
+def _days_apart(date: str | None, other: str | None) -> int | None:
+    """Days between two `YYYY-MM-DD` dates, or None unless both are whole dates."""
+    if not date or not other:
+        return None
+    try:
+        left = datetime.strptime(date[:10], "%Y-%m-%d")
+        right = datetime.strptime(other[:10], "%Y-%m-%d")
+    except ValueError:
+        return None
+    return abs((left - right).days)
+
+
+def nearest_opener(candidates: list[dict], first_air, wanted_start: str | None) -> dict | None:
+    """The candidate whose first episode aired nearest the AniList entry's own start date.
+
+    A year says which *broadcast* year a run belongs to, and a two-cour series has two runs in one
+    year — so the year cannot separate them and whichever came first in the list won. That is how
+    Space Dandy 2 (thirteen episodes, July 2014) was given season one's thirteen episodes of
+    January 2014, and Bungou Stray Dogs 2nd Season season one's.
+
+    The day can separate them, because TMDB dates a cour to the day and AniList's `startDate` is
+    the same broadcast. Nearest rather than equal: the two catalogues disagree by a day whenever
+    one recorded a broadcast date and the other a streaming one — Space Dandy's own first season is
+    5 January on AniList and 4 January on TMDB — and demanding equality would throw away the match
+    over it. A tie is left undecided rather than guessed; something later can still answer.
+    """
+    if not wanted_start:
+        return None
+    scored = []
+    for candidate in candidates:
+        distance = _days_apart(first_air(candidate), wanted_start)
+        if distance is not None and distance <= SEASON_OPENER_TOLERANCE_DAYS:
+            scored.append((distance, candidate))
+    if not scored:
+        return None
+    best = min(distance for distance, _ in scored)
+    winners = [candidate for distance, candidate in scored if distance == best]
+    return winners[0] if len(winners) == 1 else None
+
+
+def _group_first_air(group: dict) -> str | None:
+    """The air date of an episode group run's first episode."""
+    episodes = group.get("episodes") or []
+    return episodes[0].get("air_date") if episodes else None
+
+
+def opens_when_season_does(raw: list[dict], wanted_start: str | None) -> bool:
+    """Whether a run of TMDB episodes begins when the AniList season it is claimed for began.
+
+    Nothing to compare is not evidence against a match, so a partial AniList date or a TMDB episode
+    with no date of its own passes — the same rule the year slack follows.
+    """
+    if not wanted_start or not raw:
+        return True
+    distance = _days_apart(raw[0].get("air_date"), wanted_start)
+    return distance is None or distance <= SEASON_OPENER_TOLERANCE_DAYS
+
+
+def is_sequel(entry: dict) -> bool:
+    """Whether the AniList title names itself a later season, part or cour.
+
+    Used only to withdraw the "lone season is unambiguous" fallback below. A title that survives
+    `series_search_query` unchanged carries no season marker and is taken to be the whole series.
+    """
+    titles = entry.get("title") or {}
+    for raw in (titles.get("romaji"), titles.get("english")):
+        if raw and raw.strip() and series_search_query(raw) != raw.strip():
+            return True
+    return False
+
+
+def pick_season(
+    seasons: list[dict],
+    wanted_episodes: int | None,
+    wanted_year: int | None,
+    sequel: bool = False,
+    wanted_start: str | None = None,
+) -> dict | None:
+    """The TMDB season holding the AniList season being built, or None when a group split is needed.
+
+    An exact episode count is the strongest signal available and the date it started is the
+    tie-break. A season of the wrong length is refused even when its year is the only one that
+    fits: TMDB holds Dandadan's two AniList seasons as one season of 24 aired in 2024, and matching
+    on year alone would hand the twelve-episode first season a twenty-four episode run. The date is
+    a tie-break rather than a rule of its own for the same reason — that merged season begins on
+    exactly the day AniList's first season does.
+
+    A count that is unique but lands years away from the entry is not decided here at all — see
+    [far_year_season], which the caller tries only after the episode groups have had their turn.
+    """
+    real = [s for s in seasons if (s.get("season_number") or 0) > 0 and (s.get("episode_count") or 0) > 0]
+    if not real:
+        return None
+    if wanted_episodes is not None:
+        same_count = [s for s in real if s.get("episode_count") == wanted_episodes]
+        # Two cours of one series are the same length in the same year, so the year below cannot
+        # separate them and returns whichever TMDB listed first — see [nearest_opener].
+        opener = nearest_opener(same_count, lambda s: s.get("air_date"), wanted_start)
+        if opener:
+            return opener
+        for season in same_count:
+            if _year_of(season.get("air_date")) == wanted_year:
+                return season
+        if len(same_count) == 1 and _year_is_near(same_count[0].get("air_date"), wanted_year):
+            return same_count[0]
+        return None
+    if wanted_year is not None:
+        same_year = [s for s in real if _year_of(s.get("air_date")) == wanted_year]
+        if len(same_year) == 1:
+            return same_year[0]
+    # A series with exactly one season and no count to go on is unambiguous by construction — but
+    # only when the AniList entry is the series. For a title that names itself a later season, the
+    # lone TMDB season is the *whole run*, and taking it is how "Dandadan 3rd Season" ends up with
+    # seasons one and two's twenty-four episodes attached to a show that has not aired. AniList has
+    # no episode count for an unannounced season, so nothing further up catches this.
+    if sequel:
+        return None
+    return real[0] if len(real) == 1 else None
+
+
+def far_year_season(
+    seasons: list[dict], wanted_episodes: int | None, wanted_year: int | None
+) -> dict | None:
+    """The lone count match [pick_season] held back because its year is nowhere near the entry's.
+
+    Attack on Titan is why this exists. AniList's Final Season Part 2 is twelve episodes from 2022;
+    TMDB keeps the Final Season as one season of 28 and its *second* season is twelve episodes from
+    2017. Twelve was unique, so the count rule took it and every viewer of Part 2 got 2017's titles
+    and stills — the wrong show's episodes, on one of the most-watched titles there is.
+
+    Five years apart is not a season TMDB dated differently, so the answer is demoted rather than
+    trusted: the episode groups are asked first, and for that title one of them holds a "Final
+    Season Part 2" of exactly twelve beginning in 2022. It is still returned when they find nothing,
+    because a count match with an implausible year is better than no episodes at all — that is what
+    this used to return outright, and nothing that works today should stop working.
+    """
+    if wanted_episodes is None:
+        return None
+    real = [s for s in seasons if (s.get("season_number") or 0) > 0 and (s.get("episode_count") or 0) > 0]
+    same_count = [s for s in real if s.get("episode_count") == wanted_episodes]
+    if len(same_count) != 1 or _year_is_near(same_count[0].get("air_date"), wanted_year):
+        return None
+    return same_count[0]
+
+
+def near_count_season(
+    seasons: list[dict], wanted_episodes: int | None, wanted_start: str | None
+) -> dict | None:
+    """The one TMDB season that opens the day the entry does and is *nearly* its length.
+
+    Every rule above treats the episode count as binding, and over a thousand finished titles fail
+    on it by one or two: AniList counts an OVA or a recap that TMDB files under specials. CLANNAD is
+    23 episodes on AniList and 22 on TMDB, After Story 24 against 22, and both sat in the dataset
+    with no titles and no stills at all. This is the candidate for those, and *only* a candidate:
+    a near count is also what an episode inserted or merged mid-run looks like (Outlaw Star's
+    unaired episode is TMDB's 16th, TEXHNOLYZE's last four are three), and taken by position that
+    puts the wrong title on every episode after it. So the caller has to prove the run with
+    [dated_run_agrees] before using it.
+
+    The opener has to agree as well as the length, and exactly one season may qualify.
+    """
+    if not wanted_episodes or wanted_episodes < NEAR_COUNT_MIN_EPISODES or not wanted_start:
+        return None
+    slack = 2 if wanted_episodes >= 20 else 1
+    def opens_with_entry(season: dict) -> bool:
+        distance = _days_apart(season.get("air_date"), wanted_start)
+        return distance is not None and distance <= SEASON_OPENER_TOLERANCE_DAYS
+
+    near = [
+        s
+        for s in seasons
+        if (s.get("season_number") or 0) > 0
+        and (s.get("episode_count") or 0) > 0
+        and abs(s["episode_count"] - wanted_episodes) <= slack
+        and opens_with_entry(s)
+    ]
+    return near[0] if len(near) == 1 else None
+
+
+def dated_run_agrees(raw: list[dict], broadcast_dates: list[str | None], wanted_episodes: int) -> bool:
+    """Whether a TMDB run is this entry's episodes position by position, judged by air date.
+
+    [broadcast_dates] is AniZip's air date for each of the entry's episodes in order. Every
+    position the run will be used for — the shorter of the run and the entry — must carry a date
+    on both sides, and the two must agree. A missing date is a refusal, not a pass: this is the
+    only evidence that the run has no episode inserted or merged in the middle.
+    """
+    used = min(len(raw), wanted_episodes)
+    if used == 0 or len(broadcast_dates) < used:
+        return False
+    for episode, broadcast in zip(raw[:used], broadcast_dates[:used]):
+        distance = _days_apart(episode.get("air_date"), broadcast)
+        if distance is None or distance > NEAR_COUNT_DATE_TOLERANCE_DAYS:
+            return False
+    return True
+
+
+def anizip_broadcast_dates(anilist_id: int) -> list[str | None]:
+    """AniZip's air date for each numbered episode of one AniList entry, in order; empty on failure.
+
+    From the `anizip` cache when the pass has stored them (`airdates`), which is how the daily runner
+    gets them: it never asks AniZip itself, and the cache is committed alongside the tree. Otherwise
+    fetched live, which only ever happens for the handful of titles that reach [near_count_season].
+    Sent without the TMDB session, whose token is not AniZip's business.
+    """
+    cached = load_anizip(anilist_id).get("airdates")
+    if isinstance(cached, list):
+        return cached
+    with _ANIZIP_LOCK:
+        global _ANIZIP_LAST
+        wait = _ANIZIP_LAST + ANIZIP_MIN_INTERVAL - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _ANIZIP_LAST = time.monotonic()
+    try:
+        response = requests.get(
+            ANIZIP_API,
+            params={"anilist_id": anilist_id},
+            headers={"User-Agent": "anilili-media-index/1.0"},
+            timeout=30,
+        )
+        if response.status_code != 200:
+            return []
+        return anizip_airdates(response.json() or {})
+    except (requests.RequestException, ValueError):
+        return []
+
+
+_ANIZIP_LOCK = threading.Lock()
+_ANIZIP_LAST = 0.0
+
+
+def _year_is_near(air_date: str | None, wanted_year: int | None) -> bool:
+    """Whether a TMDB season's year is close enough to be the same broadcast season.
+
+    One year of slack, because the two catalogues are not measuring the same thing: TMDB dates a
+    season by its first episode while AniList files a show by the season it is announced for, so an
+    autumn run crossing into January is routinely a year apart. Nothing to compare is not evidence
+    against a match, so both missing values pass.
+    """
+    if wanted_year is None:
+        return True
+    year = _year_of(air_date)
+    if year is None:
+        return True
+    return abs(year - wanted_year) <= SEASON_YEAR_SLACK
+
+
+def whole_series_seasons(entry: dict, seasons: list[dict], sequel: bool) -> list[dict]:
+    """Every TMDB season, in broadcast order, when the AniList entry covers the whole run.
+
+    An endless series is one AniList entry holding every episode ever broadcast, while TMDB splits
+    it into broadcast seasons. Picking one of those picks a fraction: One Piece is 23 TMDB seasons
+    and 1,181 episodes, its AniList entry states no total because it is still running, and matching
+    on the start year selected season 1 alone — 61 episodes ending in 2001, leaving every episode
+    after that with no title and no still.
+
+    No episode count and no season marker means the entry *is* the series, so the whole run is the
+    answer. So does a stated count that is exactly the sum of every numbered season: Naruto
+    Shippuden is one AniList entry of 500 and twenty TMDB seasons adding up to 500, and with no
+    season that long the groups answered with a hand-edited 32-episode arc instead. Empty when
+    neither holds, which leaves the ordinary season matching to decide:
+
+    - Any other stated count binds to one season and is the stronger signal (see `pick_season`).
+    - A named sequel is one season of a longer run, and the run is the one thing it must not get.
+    - A series TMDB already keeps as a single season has nothing to concatenate — Sazae-san's 2,650
+      and Detective Conan's 1,212 arrive that way and are unaffected either way.
+    """
+    if sequel:
+        return []
+    numbered = sorted(
+        (s for s in seasons if (s.get("season_number") or 0) > 0 and (s.get("episode_count") or 0) > 0),
+        key=lambda s: s["season_number"],
+    )
+    if len(numbered) < 2:
+        return []
+    wanted = entry.get("episodes")
+    if wanted is not None and sum(s["episode_count"] for s in numbered) != wanted:
+        return []
+    return numbered
+
+
+def is_broadcast_order(episodes: list[dict]) -> bool:
+    """Whether a group run lists its episodes in TMDB's own broadcast numbering.
+
+    Episode groups are hand-edited, and Naruto Shippuden's "Released Order" grouping files episode 11
+    fifth in its first arc. Runs are numbered by position, so a shuffled run puts one episode's
+    title and still on another; a season's broadcast split — the only kind worth taking — counts up.
+    """
+    keys = [(e.get("season_number") or 0, e.get("episode_number") or 0) for e in episodes]
+    # A run without TMDB's numbering cannot be judged, and is not refused for it.
+    if any(number <= 0 for _, number in keys):
+        return True
+    return all(a < b for a, b in zip(keys, keys[1:]))
+
+
+def pick_group(
+    groups: list[dict],
+    wanted_episodes: int | None,
+    wanted_year: int | None,
+    wanted_start: str | None = None,
+) -> dict | None:
+    """The run of a "Seasons" episode group that holds the AniList season being built.
+
+    Unlike the seasons above, these runs *are* the broadcast split, so a run beginning on the day
+    the AniList season began is that season however long TMDB made it. Bungou Stray Dogs is why
+    that last rule exists: its whole 60-episode run is one TMDB season, and the group that splits
+    it back into cours gives the second cour thirteen episodes — its twelve, plus the OVA that
+    AniList files as a separate entry. Thirteen is not twelve, so the count rule refused it and the
+    year then handed the 2016 autumn season the 2016 spring one's twelve episodes: every episode of
+    season two showed season one's title and still. An extra episode on the end of the right run
+    costs nothing, because a run longer than the season is cut back to it by air date on the device.
+    """
+    # A group's specials run is never a season, and it opens beside one: The Apothecary Diaries'
+    # starts the day after season one, near enough for the any-length opener rule to take it.
+    real = [
+        g
+        for g in groups
+        if g.get("episodes")
+        and not (g.get("name") or "").strip().lower().startswith("special")
+        and is_broadcast_order(g["episodes"])
+    ]
+    if not real:
+        return None
+
+    def first_year(group: dict) -> int | None:
+        return _year_of(_group_first_air(group))
+
+    if wanted_episodes is not None:
+        same_count = [g for g in real if len(g.get("episodes") or []) == wanted_episodes]
+        # The right length and the right day; then the right day at any length, which beats the
+        # year below because these runs are the broadcast split and a run starting within a
+        # fortnight of the entry *is* that broadcast, while a same-year run is the other cour.
+        opener = nearest_opener(same_count, _group_first_air, wanted_start) or nearest_opener(
+            real, _group_first_air, wanted_start
+        )
+        if opener:
+            return opener
+        for group in same_count:
+            if first_year(group) == wanted_year:
+                return group
+        return same_count[0] if len(same_count) == 1 else None
+    if wanted_year is not None:
+        same_year = [g for g in real if first_year(g) == wanted_year]
+        if len(same_year) == 1:
+            return same_year[0]
+    return nearest_opener(real, _group_first_air, wanted_start)
+
+
+def to_episodes(raw: list[dict]) -> list[dict]:
+    """A run of TMDB episodes in Konoha's episode shape, numbered by position not by TMDB.
+
+    Position is what survives both shapes. Where TMDB keeps a season of its own the two agree, but
+    inside a merged run the second season's episodes are numbered 13..24 while every other
+    catalogue — AniList, the stream providers, the viewer — calls them 1..12.
+    """
+    out = []
+    for index, episode in enumerate(raw):
+        still = episode.get("still_path")
+        out.append(
+            {
+                "number": float(index + 1),
+                "title": (episode.get("name") or None),
+                "overview": (episode.get("overview") or None),
+                "air_date": (episode.get("air_date") or None),
+                "still": (TMDB_STILL_BASE + still) if still else None,
+                "runtime": episode.get("runtime"),
+            }
+        )
+    return out
+
+
+# --------------------------------------------------------------------------------------------
+# AniList
+# --------------------------------------------------------------------------------------------
+
+
+class AniList:
+    """Paged AniList reader that spends its quota rather than holding a fixed rate.
+
+    AniList publishes the budget on every response (`X-RateLimit-Remaining` and `-Reset`), and the
+    degraded ceiling is 30/min against a normal 90. Reacting only to a 429 costs a full minute of
+    timeout, so this glides toward the reset as the budget runs down instead.
+    """
+
+    def __init__(self, session: requests.Session, min_interval: float = MIN_INTERVAL) -> None:
+        self.session = session
+        self.remaining: int | None = None
+        self.reset_at: float = 0.0
+        self.last_request: float = 0.0
+        # Adapts upward on every 429 and never comes back down within a run. The published budget
+        # cannot be used to derive this: AniList degrades from 90/min to 30/min without changing
+        # `X-RateLimit-Limit`, so pacing off the header alone spends three times the real budget
+        # and 429s on essentially every request. The floor is what actually holds the rate.
+        self.interval = min_interval
+
+    def _pace(self) -> None:
+        elapsed = time.time() - self.last_request
+        if elapsed < self.interval:
+            time.sleep(self.interval - elapsed)
+        if self.remaining is None:
+            return
+        window = max(self.reset_at - time.time(), 0.0)
+        if self.remaining <= RATE_BUFFER and window > 0:
+            print(f"  quota exhausted, sleeping {window + 1:.0f}s to window reset", flush=True)
+            time.sleep(window + 1)
+
+    def fetch(self, page: int, per_page: int, variables: dict) -> dict:
+        data = self.post(
+            CATALOG_QUERY,
+            {"page": page, "perPage": per_page, **variables},
+            label=f"{variables} page {page}",
+        )
+        return data["Page"]
+
+    def post(self, query: str, variables: dict, label: str = "") -> dict:
+        """One paced, retried GraphQL call, returning the whole `data` object.
+
+        Separate from [fetch] because the schedule walk asks for many aliased `Page` fields in one
+        query rather than one `Page` paged to exhaustion, so there is no single page to unwrap —
+        but it wants the same pacing, the same 429 handling and the same budget tracking.
+        """
+        for attempt in range(6):
+            self._pace()
+            response = self.session.post(
+                ANILIST_API,
+                json={"query": query, "variables": variables},
+                timeout=45,
+            )
+            self.last_request = time.time()
+            remaining = response.headers.get("X-RateLimit-Remaining")
+            reset = response.headers.get("X-RateLimit-Reset")
+            if remaining is not None:
+                self.remaining = int(remaining)
+            if reset is not None:
+                self.reset_at = float(reset)
+
+            if response.status_code == 429:
+                wait = float(response.headers.get("Retry-After", 60)) + 1
+                self.interval = min(self.interval + INTERVAL_STEP, MAX_INTERVAL)
+                print(
+                    f"  429, waiting {wait:.0f}s and slowing to {self.interval:.1f}s/request",
+                    flush=True,
+                )
+                time.sleep(wait)
+                continue
+            if response.status_code >= 500:
+                time.sleep(2 * (attempt + 1))
+                continue
+            if response.status_code == 400:
+                # A malformed query is not retryable, and the GraphQL body says what is wrong where
+                # raise_for_status only says "Bad Request".
+                raise RuntimeError(f"AniList rejected the query: {response.text[:500]}")
+            response.raise_for_status()
+            body = response.json()
+            if body.get("errors"):
+                raise RuntimeError(f"AniList error on {label or variables}: {body['errors']}")
+            return body["data"]
+        raise RuntimeError(f"AniList {label or variables} failed after retries")
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    WORK.mkdir(parents=True, exist_ok=True)
+    session = requests.Session()
+    session.headers.update(
+        {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Anilili-konoha-build (AniList client 45552)",
+            # AniList refuses a request carrying neither a Referer nor an Authorization header,
+            # and does it with a "temporarily disabled" 403 that reads like an outage. The value
+            # is not inspected — see the same header in AniListClient.kt.
+            "Referer": "android-app://com.miruronative",
+        }
+    )
+    anilist = AniList(session, args.min_interval)
+
+    # Resume from whatever a previous run left behind rather than re-walking it. A full pull is
+    # ~600 requests against a 90/min budget, so an interrupted run is worth continuing.
+    by_id: dict[int, dict] = {}
+    if CATALOG_FILE.exists() and args.resume:
+        for entry in json.loads(CATALOG_FILE.read_text(encoding="utf-8")):
+            by_id[entry["id"]] = entry
+        print(f"resuming from {len(by_id)} cached titles", flush=True)
+
+    def drain(label: str, variables: dict) -> int:
+        """Page one partition to exhaustion, returning how many titles it had not seen before."""
+        added = 0
+        page = 1
+        while True:
+            data = anilist.fetch(page, args.per_page, variables)
+            media = data.get("media") or []
+            for entry in media:
+                # Overwrite rather than skip. A refresh exists to pick up a status that moved to
+                # RELEASING, an episode count that grew and the next airing slot — all on titles
+                # already cached. Keeping the first answer would make every run after the first a
+                # no-op for precisely the titles that change.
+                if entry["id"] not in by_id:
+                    added += 1
+                by_id[entry["id"]] = entry
+            if not (data.get("pageInfo") or {}).get("hasNextPage"):
+                break
+            page += 1
+            if page > MAX_PARTITION_PAGES:
+                # Never reached by a year of anime, but a silent truncation here would be a hole in
+                # the catalogue that nothing downstream could detect.
+                print(f"  !! {label} exceeded {MAX_PARTITION_PAGES} pages — partition is too coarse")
+                break
+        if added:
+            print(f"  {label}: +{added} (total {len(by_id)})", flush=True)
+        return added
+
+    current_year = datetime.now(timezone.utc).year
+    partitions = list(range(args.from_year, current_year + 3))
+    try:
+        for year in partitions:
+            drain(str(year), {"greater": year * 10000, "lesser": year * 10000 + 1232})
+        # Announcements with no start date belong to no year partition, so they are swept by status.
+        drain("unscheduled", {"status": "NOT_YET_RELEASED"})
+    except KeyboardInterrupt:
+        print("\ninterrupted — saving what was fetched", flush=True)
+
+    entries = sorted(by_id.values(), key=lambda e: e["id"])
+    CATALOG_FILE.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
+    print(f"\nwrote {len(entries)} titles to {CATALOG_FILE}")
+    return 0
+
+
+class FribbEntry(typing.NamedTuple):
+    """One AniList id's cross-references, as Fribb states them."""
+
+    tmdb_id: int | None
+    tmdb_season: int | None
+    tvdb_id: int | None
+    tvdb_season: int | None
+    mal_id: int | None
+    kitsu_id: int | None
+    anidb_id: int | None
+    simkl_id: int | None
+
+
+def load_fribb(refresh: bool = False) -> dict[int, FribbEntry]:
+    """Fribb's cross-reference, indexed by AniList id. ~6 MB, cached for three days.
+
+    `episode_offset` is deliberately not read. It is AniDB's offset into a *TVDB* season and Fribb
+    copies it to the tmdb field unchanged, which does not survive the trip: `.hack//Liminality`
+    (AniList 299) is four episodes at offset 1 of TMDB 8864 season 0, and the four it actually owns
+    are that season's entries 1, 2, 3 and 5 — no single offset produces them under either reading.
+    So specials keep the ordinary matching, which at worst gives them nothing rather than confidently
+    giving them another OVA's titles.
+    """
+    WORK.mkdir(parents=True, exist_ok=True)
+    stale = (
+        refresh
+        or not FRIBB_FILE.exists()
+        or time.time() - FRIBB_FILE.stat().st_mtime > FRIBB_MAX_AGE_S
+    )
+    if stale:
+        print(f"downloading {FRIBB_URL}", flush=True)
+        response = requests.get(FRIBB_URL, timeout=120)
+        response.raise_for_status()
+        FRIBB_FILE.write_bytes(response.content)
+
+    index: dict[int, FribbEntry] = {}
+    for row in json.loads(FRIBB_FILE.read_text(encoding="utf-8")):
+        anilist_id = row.get("anilist_id")
+        if not anilist_id:
+            continue
+        # themoviedb_id is an object for TV and an array for film; only the TV side is single-valued
+        # and only the TV side has seasons, so a movie mapping is left to the ordinary matching.
+        raw_tmdb = row.get("themoviedb_id")
+        tmdb_id = raw_tmdb.get("tv") if isinstance(raw_tmdb, dict) else None
+        season = row.get("season") or {}
+        index[anilist_id] = FribbEntry(
+            tmdb_id=tmdb_id if isinstance(tmdb_id, int) else None,
+            tmdb_season=season.get("tmdb"),
+            tvdb_id=row.get("tvdb_id") if isinstance(row.get("tvdb_id"), int) else None,
+            tvdb_season=season.get("tvdb"),
+            mal_id=row.get("mal_id"),
+            kitsu_id=row.get("kitsu_id"),
+            anidb_id=row.get("anidb_id"),
+            simkl_id=row.get("simkl_id"),
+        )
+    return index
+
+
+def _iso_air_date(start: dict | None) -> str | None:
+    """An AniList `startDate` as the `YYYY-MM-DD` TMDB writes, or None unless all three are known."""
+    if not start:
+        return None
+    year, month, day = start.get("year"), start.get("month"), start.get("day")
+    if not year or not month or not day:
+        return None
+    return f"{year:04d}-{month:02d}-{day:02d}"
+
+
+def _air_order(entry: dict) -> tuple:
+    """Broadcast order key. Start date first, AniList id as the tiebreak for same-day entries."""
+    start = entry.get("startDate") or {}
+    return (
+        start.get("year") or 9999,
+        start.get("month") or 99,
+        start.get("day") or 99,
+        entry["id"],
+    )
+
+
+def cour_slices(catalog: list[dict], fribb: dict[int, FribbEntry]) -> dict[int, tuple[int, int, int]]:
+    """Where each split-cour entry sits inside the TMDB season it shares, by AniList id.
+
+    A split cour is one broadcast season that AniList files as several entries. TMDB keeps BLEACH's
+    four Thousand-Year Blood War parts as a single season 2 of fifty episodes; AniList calls them
+    13, 13, 14 and 10 — which is fifty. Nothing above can resolve that: the season is the wrong
+    length for every one of the four, so each is rejected and all four end up with no episodes at
+    all, which is what put black rows on every season of that title.
+
+    The parts are contiguous and in broadcast order, so their own counts say where each begins. That
+    is only trustworthy when they account for the whole season exactly, so the group total is
+    carried and checked against the season actually fetched before any of it is used — a group whose
+    counts sum to something else is not a cour split and is left to the ordinary matching.
+
+    Returns `(offset, count, group_total)` per id, for the 265 titles that share a season with a
+    sibling. Groups where any member states no episode count are skipped; there is nothing to
+    measure from.
+    """
+    grouped: dict[tuple[int, int], list[dict]] = {}
+    for entry in catalog:
+        cross = fribb.get(entry["id"])
+        if cross and cross.tmdb_id and cross.tmdb_season:
+            grouped.setdefault((cross.tmdb_id, cross.tmdb_season), []).append(entry)
+
+    slices: dict[int, tuple[int, int, int]] = {}
+    for members in grouped.values():
+        if len(members) < 2:
+            continue
+        ordered = sorted(members, key=_air_order)
+        counts = [member.get("episodes") for member in ordered]
+        if any(count is None or count <= 0 for count in counts):
+            continue
+        total = sum(counts)
+        offset = 0
+        for member, count in zip(ordered, counts):
+            slices[member["id"]] = (offset, count, total)
+            offset += count
+    return slices
+
+
+def previous_id_map(out: pathlib.Path | None = None) -> dict[str, dict]:
+    """The last id-map this pipeline produced, for the fields it cannot regenerate.
+
+    Kitsu, AniDB and Simkl ids came from Konoha's own matching and there is no source here that can
+    rebuild them, so they are carried forward rather than dropped — losing them would make the file
+    worse than the one it replaces.
+
+    The published tree is preferred over the bundled asset because they diverge as soon as the first
+    refresh lands: in CI the app's assets directory does not exist at all, and on a dev machine it
+    holds whatever shipped in the last APK rather than the newest run.
+    """
+    for candidate in ((out / "id-map.json") if out else None, ASSETS / "id-map.json"):
+        if candidate and candidate.exists():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    return {}
+
+
+def load_catalog() -> list[dict]:
+    if not CATALOG_FILE.exists():
+        raise SystemExit(f"No catalogue at {CATALOG_FILE}. Run `konoha_build.py catalog` first.")
+    return json.loads(CATALOG_FILE.read_text(encoding="utf-8"))
+
+
+# --------------------------------------------------------------------------------------------
+# TMDB
+# --------------------------------------------------------------------------------------------
+
+
+class Tmdb:
+    def __init__(self, token: str) -> None:
+        self.token = token
+        self.local = threading.local()
+
+    def _session(self) -> requests.Session:
+        session = getattr(self.local, "session", None)
+        if session is None:
+            session = requests.Session()
+            session.headers.update(
+                {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
+            )
+            self.local.session = session
+        return session
+
+    def get(self, path: str) -> dict | None:
+        separator = "&" if "?" in path else "?"
+        url = f"{TMDB_API}{path}{separator}language=en-US"
+        for attempt in range(5):
+            try:
+                response = self._session().get(url, timeout=30)
+            except requests.RequestException:
+                time.sleep(1 + attempt)
+                continue
+            # 404 is an ordinary answer: a series can simply have no episode groups.
+            if response.status_code == 404:
+                return None
+            if response.status_code == 429:
+                time.sleep(float(response.headers.get("Retry-After", 2)) + 1)
+                continue
+            if response.status_code >= 500:
+                time.sleep(1 + attempt)
+                continue
+            if not response.ok:
+                return None
+            return response.json()
+        return None
+
+    def resolve_series(self, entry: dict, hint_id: int | None) -> dict | None:
+        """The TMDB series for an AniList entry, checked against its titles before it is believed."""
+        if hint_id:
+            candidate = self.get(f"/tv/{hint_id}")
+            if candidate and titles_match(entry, candidate):
+                return candidate
+        titles = entry.get("title") or {}
+        queries: list[str] = []
+        for raw in (titles.get("romaji"), titles.get("english")):
+            for candidate in (raw.strip() if raw else None, series_search_query(raw)):
+                if candidate and candidate not in queries:
+                    queries.append(candidate)
+        for query in queries:
+            found = self.get(f"/search/tv?query={requests.utils.quote(query)}")
+            for result in (found or {}).get("results", []):
+                if titles_match(entry, result):
+                    return self.get(f"/tv/{result['id']}")
+        return None
+
+    def episodes_for(
+        self,
+        entry: dict,
+        hint_id: int | None,
+        fribb: FribbEntry | None = None,
+        cour: tuple[int, int, int] | None = None,
+    ) -> tuple[list[dict], int | None]:
+        """Episode rows for one AniList title, plus the TMDB series id they came from."""
+        wanted_episodes = entry.get("episodes")
+        wanted_start = _iso_air_date(entry.get("startDate"))
+
+        # Fribb names the season outright, which is the one thing the heuristics below cannot do,
+        # so it is tried first — but checked, not believed. What it states is a logical season that
+        # TMDB does not always have: it calls DAN DA DAN Season 2 "season 2" of TMDB 240411, and
+        # that series carries a single season of 24. So the season is fetched, and it is only
+        # accepted when it comes back the length AniList says the season is. Anything else falls
+        # through to the matching below, which is what found the right answer for that title.
+        #
+        # The length is not enough on its own, because Fribb does not always distinguish a sequel
+        # from the season it follows: it files Space Dandy and Space Dandy 2 as season 1 of the same
+        # series, and both cours are thirteen episodes, so the length check passed and the second
+        # season was shown the first's. The day the run opens is the other half of the check —
+        # against a *held* answer rather than an outright rejection, since Fribb naming the season
+        # is still better evidence than anything below, and a season that only disagrees about the
+        # date is better than a title with no episodes at all.
+        held: list[dict] | None = None
+        if fribb and fribb.tmdb_id and fribb.tmdb_season:
+            payload = self.get(f"/tv/{fribb.tmdb_id}/season/{fribb.tmdb_season}")
+            raw = (payload or {}).get("episodes") or []
+            if raw and (wanted_episodes is None or len(raw) == wanted_episodes):
+                if opens_when_season_does(raw, wanted_start):
+                    return to_episodes(raw), fribb.tmdb_id
+                held = raw
+            # The season is the wrong length for this entry alone, which is what a split cour looks
+            # like: several AniList entries sharing one broadcast season. Their counts say where
+            # each begins, but only once they are shown to account for this exact season — see
+            # `cour_slices`.
+            if raw and cour and len(raw) == cour[2]:
+                start, count, _ = cour
+                part = raw[start : start + count]
+                if len(part) == count:
+                    return to_episodes(part), fribb.tmdb_id
+
+        # Fribb's id is a better starting point than the old bundled map's even when it names no
+        # season: it is anime-specific and rebuilt weekly, where the bundled map is a frozen copy of
+        # a dead mirror. It still has to survive titles_match like any other candidate.
+        series = self.resolve_series(entry, fribb.tmdb_id if fribb and fribb.tmdb_id else hint_id)
+        if not series:
+            if held:
+                return to_episodes(held), fribb.tmdb_id
+            # The films carry no series id: they are not episodes of any TMDB series.
+            return self.movie_run(entry), None
+        series_id = series.get("id")
+        start = entry.get("startDate") or {}
+        wanted_year = entry.get("seasonYear") or start.get("year")
+
+        sequel = is_sequel(entry)
+        seasons = series.get("seasons") or []
+
+        # An endless series is one AniList entry covering every episode ever broadcast, and TMDB
+        # splits it into broadcast seasons. Picking one of those is picking a fraction: One Piece is
+        # 23 TMDB seasons and 1,181 episodes, its AniList entry states no total because it is still
+        # running, and matching on the start year selected season 1 alone — 61 episodes ending in
+        # 2001, with every episode after that left without a title or a still.
+        #
+        # No count and no season marker means the entry *is* the series, so the whole run is the
+        # answer and the seasons are concatenated in broadcast order. Titles TMDB already keeps as
+        # one season (Sazae-san's 2,650, Detective Conan's 1,212) are unaffected — there is nothing
+        # to concatenate — and a named sequel is excluded because for it the run is exactly what it
+        # must not be given.
+        numbered = whole_series_seasons(entry, seasons, sequel)
+        if numbered:
+            run: list[dict] = []
+            for season in numbered:
+                payload = self.get(f"/tv/{series_id}/season/{season['season_number']}")
+                run.extend((payload or {}).get("episodes") or [])
+            if run:
+                return to_episodes(run), series_id
+
+        summary = pick_season(seasons, wanted_episodes, wanted_year, sequel, wanted_start)
+        if summary:
+            season = self.get(f"/tv/{series_id}/season/{summary['season_number']}")
+            raw = (season or {}).get("episodes") or []
+            if raw:
+                return to_episodes(raw), series_id
+
+        # No season lines up, which is what a series TMDB keeps as one long run looks like. TMDB's
+        # own answer is an episode group, and the "Seasons" kind splits the run back into the
+        # seasons the rest of the world numbers from — carrying the stills with it.
+        groups = [
+            g
+            for g in ((self.get(f"/tv/{series_id}/episode_groups") or {}).get("results") or [])
+            if g.get("type") in SEASONS_GROUP_TYPES and (g.get("group_count") or 0) > 1
+        ]
+        groups.sort(
+            key=lambda g: (SEASONS_GROUP_TYPES.index(g["type"]), -(g.get("episode_count") or 0))
+        )
+        for group in groups[:MAX_GROUPS_TRIED]:
+            detail = self.get(f"/tv/episode_group/{group['id']}")
+            matched = pick_group(
+                (detail or {}).get("groups") or [], wanted_episodes, wanted_year, wanted_start
+            )
+            if matched:
+                return to_episodes(matched.get("episodes") or []), series_id
+
+        # A one-episode entry matches no numbered season and no group by count, because TMDB does
+        # not give a special a season of its own — it files it under season 0 with the date it
+        # aired. Attack on Titan's two FINAL CHAPTERS specials are AniList entries of one episode
+        # each and TMDB season 0 episodes 36 and 37, and nothing above can see them.
+        single = self.specials_episode(entry, series_id, wanted_episodes)
+        if single:
+            return single, series_id
+
+        # Nothing on this series' own terms beat the season Fribb named, so its date disagreement is
+        # forgiven and it is used after all — see the check that held it back.
+        if held:
+            return to_episodes(held), fribb.tmdb_id
+
+        # Nothing lines up on this series' own terms, so the count match whose year did not fit is
+        # taken after all rather than leaving the title with no episodes at all.
+        demoted = far_year_season(seasons, wanted_episodes, wanted_year)
+        if demoted:
+            payload = self.get(f"/tv/{series_id}/season/{demoted['season_number']}")
+            raw = (payload or {}).get("episodes") or []
+            if raw:
+                return to_episodes(raw), series_id
+        # Nothing matches the count exactly, and a season that opens the same day and is one or two
+        # episodes off is taken — but only once AniZip's dates say it is the same run, episode by
+        # episode, and only as far as the entry reaches. See `near_count_season`.
+        near = near_count_season(seasons, wanted_episodes, wanted_start)
+        if near:
+            payload = self.get(f"/tv/{series_id}/season/{near['season_number']}")
+            raw = (payload or {}).get("episodes") or []
+            if raw and dated_run_agrees(raw, anizip_broadcast_dates(entry["id"]), wanted_episodes):
+                return to_episodes(raw[:wanted_episodes]), series_id
+        # Last: the entry is not on the series at all because TMDB keeps its episodes as films.
+        films = self.movie_run(entry)
+        if films:
+            return films, None
+        return [], series_id
+
+    def movie_run(self, entry: dict) -> list[dict]:
+        """An OVA entry whose episodes TMDB keeps as separate films; see `pick_movie_run`."""
+        if entry.get("format") not in MOVIE_RUN_FORMATS:
+            return []
+        wanted = entry.get("episodes")
+        if not wanted or not 1 <= wanted <= MAX_MOVIE_RUN:
+            return []
+        found: list[dict] = []
+        for query in movie_search_queries(entry):
+            payload = self.get(f"/search/movie?query={requests.utils.quote(query)}")
+            found.extend((payload or {}).get("results") or [])
+        run = pick_movie_run(entry, found)
+        return movies_to_episodes(entry, run) if run else []
+
+    def specials_episode(
+        self, entry: dict, series_id: int, wanted_episodes: int | None
+    ) -> list[dict]:
+        """The single episode of a one-episode entry, found by its air date in TMDB's specials.
+
+        Only a stated count of exactly one is answered here: for anything longer the season and
+        group matching above is the better instrument, and a date on its own would be a guess. The
+        date has to be AniList's own and match a season 0 episode exactly, and exactly one of them —
+        two specials of the same series on the same day cannot be told apart by this and are left
+        for the fallbacks.
+        """
+        if wanted_episodes != 1:
+            return []
+        aired = _iso_air_date(entry.get("startDate"))
+        if not aired:
+            return []
+        payload = self.get(f"/tv/{series_id}/season/{SPECIALS_SEASON}")
+        same_day = [
+            episode
+            for episode in ((payload or {}).get("episodes") or [])
+            if episode.get("air_date") == aired
+        ]
+        return to_episodes(same_day) if len(same_day) == 1 else []
+
+
+def tmdb_token(explicit: str | None) -> str:
+    """The TMDB v4 read token, from the same places the Gradle build reads it.
+
+    Never committed: the build takes it from private Gradle user properties or the environment, and
+    so does this. See app/build.gradle.kts.
+    """
+    if explicit:
+        return explicit
+    for name in ("TMDB_READ_TOKEN", "TMDB_TOKEN"):
+        if os.environ.get(name):
+            return os.environ[name]
+    props = pathlib.Path.home() / ".gradle" / "gradle.properties"
+    if props.exists():
+        for line in props.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.strip().startswith("tmdbReadToken"):
+                return line.split("=", 1)[1].strip()
+    raise SystemExit(
+        "No TMDB read token. Set TMDB_READ_TOKEN, or put tmdbReadToken in ~/.gradle/gradle.properties."
+    )
+
+
+def episode_ids_arg(raw: str | None) -> set[int] | None:
+    """The `--ids` set: `1,2,3`, or `@path` naming a file of one id per line. None when not given."""
+    if not raw:
+        return None
+    text = pathlib.Path(raw[1:]).read_text(encoding="utf-8") if raw.startswith("@") else raw
+    return {int(token) for token in re.split(r"[\s,]+", text) if token.strip()}
+
+
+def cmd_episodes(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    EPISODE_DIR.mkdir(parents=True, exist_ok=True)
+    tmdb = Tmdb(tmdb_token(args.token))
+
+    fribb = load_fribb(args.refresh_fribb)
+    cours = cour_slices(catalog, fribb)
+    print(
+        f"fribb cross-reference: {len(fribb)} AniList ids, {len(cours)} titles share a season",
+        flush=True,
+    )
+
+    # The old id-map is only a fallback hint now, for the 9% of the catalogue Fribb has never
+    # heard of. Its own `confidence` is not trusted — every hint is re-checked by titles_match.
+    hints: dict[int, int] = {}
+    for key, value in previous_id_map(pathlib.Path(args.out) if args.out else None).items():
+        if value.get("tmdb") and value.get("tmdb_type") != "movie":
+            hints[int(key)] = value["tmdb"]
+
+    only = episode_ids_arg(args.ids)
+    targets = []
+    for entry in catalog:
+        if entry.get("format") not in EPISODIC_FORMATS:
+            continue
+        if only is not None:
+            # Named titles are re-fetched whatever the cache holds: naming one is the request.
+            if entry["id"] in only:
+                targets.append(entry)
+            continue
+        if args.airing_only and entry.get("status") not in {"RELEASING", "NOT_YET_RELEASED"}:
+            continue
+        path = EPISODE_DIR / f"{entry['id']}.json"
+        if path.exists() and not args.refresh and not args.airing_only:
+            continue
+        targets.append(entry)
+    if args.limit:
+        targets = targets[: args.limit]
+
+    print(f"{len(targets)} titles to fetch (workers={args.workers})", flush=True)
+    done = 0
+    matched = 0
+    lock = threading.Lock()
+
+    def work(entry: dict) -> None:
+        nonlocal done, matched
+        try:
+            episodes, series_id = tmdb.episodes_for(
+                entry, hints.get(entry["id"]), fribb.get(entry["id"]), cours.get(entry["id"])
+            )
+        except Exception as error:  # noqa: BLE001 - one bad title must not end an hours-long run
+            with lock:
+                done += 1
+            print(f"  !! {entry['id']} {error}", flush=True)
+            return
+        payload = {"tmdb_id": series_id, "episodes": episodes}
+        (EPISODE_DIR / f"{entry['id']}.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+        with lock:
+            done += 1
+            if episodes:
+                matched += 1
+            if done % 100 == 0:
+                print(f"  {done}/{len(targets)} ({matched} matched)", flush=True)
+
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        list(pool.map(work, targets))
+
+    print(f"\ndone: {done} fetched, {matched} with episodes")
+    return 0
+
+
+# --------------------------------------------------------------------------------------------
+# AniZip
+# --------------------------------------------------------------------------------------------
+
+
+def tmdb_images(session: requests.Session, token: str, tmdb_id: int) -> dict:
+    """TMDB's pictures of a series - logos and backdrops in one answer - or {} for an unknown id.
+
+    `null` is TMDB's spelling of "no language": a logo with no language and a backdrop with no
+    text on it.
+    """
+    response = session.get(
+        f"{TMDB_API}/tv/{tmdb_id}/images",
+        params={"include_image_language": "en,ja,null"},
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        return {}
+    response.raise_for_status()
+    return response.json()
+
+
+def tmdb_logo(images: dict) -> tuple[str | None, bool]:
+    """The best English logo in a TMDB images answer, and whether it holds only Japanese ones.
+
+    AniZip passes TVDB's clearlogo along with no language on it, and for anime that is often the
+    Japanese wordmark (転生したらスライムだった件 where the viewer reads "That Time I Got
+    Reincarnated as a Slime"). TMDB tags every logo with its language: on the 253 titles first
+    published with a logo, 245 had an English one there. Measured 2026-09-23.
+
+    PNG only - TMDB also hosts SVG logos, which the app's image loader cannot decode from a URL
+    without an extension it recognises. Best is the highest-voted, then the most-voted, which is
+    how TMDB's own site orders them.
+    """
+    logos = images.get("logos") or []
+    english = [
+        logo for logo in logos
+        if logo.get("iso_639_1") == "en" and str(logo.get("file_path", "")).lower().endswith(".png")
+    ]
+    english.sort(key=lambda logo: (logo.get("vote_average") or 0, logo.get("vote_count") or 0), reverse=True)
+    japanese_only = bool(logos) and not english and all(logo.get("iso_639_1") == "ja" for logo in logos)
+    return (TMDB_LOGO_BASE + english[0]["file_path"]) if english else None, japanese_only
+
+
+def pick_backdrop(tmdb_backdrops: list[dict], fanart: list[str]) -> tuple[str | None, str | None]:
+    """The landscape picture the TV hero shows for a title AniList has no banner for, and its source.
+
+    Most titles without a banner are new seasons: AniList gives a season its cover long before a
+    banner, and on 2026-10-03 14 of the 30 trending titles had none. Without a wide picture the hero
+    falls back to a blurred cover with the poster beside it.
+
+    The hero writes the title over the picture's left side, so a picture with text already on it
+    is the last resort. TMDB tags its backdrops with their text's language and `null` means no
+    text, so its text-free ones come first, highest-voted first. TheTVDB's fanart (through AniZip)
+    is next: it has no language tag, but TheTVDB's rules for fanart forbid text. TMDB's backdrops
+    with text come last.
+    """
+    usable = [b for b in tmdb_backdrops if str(b.get("file_path") or "").strip()]
+    usable.sort(key=lambda b: (b.get("vote_average") or 0, b.get("vote_count") or 0), reverse=True)
+    text_free = [b for b in usable if b.get("iso_639_1") is None]
+    if text_free:
+        return TMDB_BACKDROP_BASE + text_free[0]["file_path"], "tmdb"
+    if fanart:
+        return fanart[0], "tvdb"
+    if usable:
+        return TMDB_BACKDROP_BASE + usable[0]["file_path"], "tmdb-text"
+    return None, None
+
+
+def anizip_payload(
+    session: requests.Session,
+    anilist_id: int,
+    tmdb_id: int | None = None,
+    tmdb_token: str | None = None,
+) -> dict:
+    """The logo and per-episode scores AniZip holds for one AniList id, in the cache's own shape.
+
+    Reduced here rather than at emit time so a cached file is small and stable: the upstream
+    response carries every title in thirty languages and every episode's synopsis, none of which
+    this tree takes — it has TMDB's for that, and mixing two numbering schemes inside one episode
+    list is how an episode ends up described as a different episode.
+
+    A title AniZip has never heard of caches as an empty answer, so the next pass does not ask
+    again. That is the common case for the long tail and it is not an error.
+    """
+    response = session.get(ANIZIP_API, params={"anilist_id": anilist_id}, timeout=30)
+    if response.status_code == 404:
+        # Unknown to AniZip is not unknown to TMDB: the English logo below is still worth asking for.
+        body = {}
+    else:
+        response.raise_for_status()
+        body = response.json()
+
+    logo = None
+    for image in body.get("images") or []:
+        if str(image.get("coverType", "")).lower() == "clearlogo" and image.get("url"):
+            logo = image["url"]
+            break
+    # English first. The logo stands in for the title on the anime page, so one the viewer cannot
+    # read is worse than none: the page falls back to the title in text. Where TMDB has only
+    # Japanese logos, TVDB's is almost certainly Japanese too, so it is dropped; where TMDB knows
+    # nothing, TVDB's is kept, since there is nothing to say it is not English.
+    logo_source = "tvdb" if logo else None
+    images = tmdb_images(session, tmdb_token, tmdb_id) if tmdb_id and tmdb_token else {}
+    if images:
+        english, japanese_only = tmdb_logo(images)
+        if english:
+            logo, logo_source = english, "tmdb-en"
+        elif japanese_only:
+            logo, logo_source = None, None
+    backdrop, backdrop_source = pick_backdrop(images.get("backdrops") or [], anizip_fanart(body))
+
+    ratings: dict[str, float] = {}
+    for key, episode in (body.get("episodes") or {}).items():
+        # Specials are keyed "S1", "P91" and so on. They are numbered in a run of their own that
+        # has nothing to do with the episode numbers the app keys by, so a score from one would
+        # land on an unrelated episode.
+        if not key.isdigit():
+            continue
+        raw = episode.get("rating")
+        if raw in (None, ""):
+            continue
+        try:
+            score = float(raw)
+        except (TypeError, ValueError):
+            continue
+        # A zero is "nobody has scored this", the same as TMDB's, and must not be shown as a score.
+        if score > 0:
+            ratings[str(int(key))] = round(score, 2)
+
+    return {
+        "logo": logo,
+        "logo_source": logo_source,
+        "backdrop": backdrop,
+        "backdrop_source": backdrop_source,
+        "ratings": ratings,
+        # Only when there are any: a title AniZip does not know stays the small empty answer.
+        **({"airdates": airdates} if (airdates := anizip_airdates(body)) else {}),
+    }
+
+
+def anizip_airdates(body: dict) -> list[str | None]:
+    """AniZip's air date for each numbered episode, in order; empty unless numbered 1..n unbroken.
+
+    Kept in the `anizip` cache because [near_count_season] needs it at emit time on the daily
+    runner, which never asks AniZip itself. A gap in the numbering would put every date after it
+    on the wrong episode, so a broken run is no answer at all.
+    """
+    numbered = sorted(
+        (int(key), value) for key, value in (body.get("episodes") or {}).items() if key.isdigit()
+    )
+    if [number for number, _ in numbered] != list(range(1, len(numbered) + 1)):
+        return []
+    return [
+        ((value or {}).get("airdate") or (value or {}).get("airDate") or "")[:10] or None
+        for _, value in numbered
+    ]
+
+
+def anizip_fanart(body: dict) -> list[str]:
+    """TheTVDB's wide backdrops in an AniZip answer, in the order AniZip lists them."""
+    return [
+        image["url"]
+        for image in body.get("images") or []
+        if str(image.get("coverType", "")).lower() == "fanart" and image.get("url")
+    ]
+
+
+def anizip_tmdb_id(anilist_id: int, fribb: dict[int, "FribbEntry"]) -> int | None:
+    """The TMDB series id the AniZip pass asks TMDB about, or None.
+
+    The same one emit writes: the episode resolver's own answer first, the Fribb mapping second.
+    Never the bundled id-map, whose TMDB ids are known to be wrong. Fribb's is the TV id only, so a
+    film is never looked up as a series of the same number.
+    """
+    cached = EPISODE_DIR / f"{anilist_id}.json"
+    if cached.exists():
+        try:
+            found = json.loads(cached.read_text(encoding="utf-8")).get("tmdb_id")
+        except (OSError, json.JSONDecodeError):
+            found = None
+        if found:
+            return found
+    cross = fribb.get(anilist_id)
+    return cross.tmdb_id if cross and cross.tmdb_id else None
+
+
+# Logos chosen by hand, over whatever the AniZip pass cached. The English-first rule drops a
+# title's logo when TMDB holds only Japanese ones, which is right for a wordmark the viewer cannot
+# read — and wrong for one whose title *is* a number. 86's logos all carry the katakana
+# エイティシックス under the numerals, but the "86" is the title and reads in any language.
+# Applied at emit rather than in the cache, so it holds for seasons the pass never crawled and
+# survives a re-crawl that would drop it again.
+TVDB_86_LOGO = "https://artworks.thetvdb.com/banners/v4/series/378609/clearlogo/612011f341f15.png"
+LOGO_OVERRIDES: dict[int, str] = {
+    116589: TVDB_86_LOGO,  # 86 EIGHTY-SIX
+    131586: TVDB_86_LOGO,  # 86 EIGHTY-SIX Part 2
+}
+
+
+def series_logo(anilist_id: int, anizip: dict) -> str | None:
+    """The logo a title's page is written with: a hand-picked override, else the cached AniZip one."""
+    return LOGO_OVERRIDES.get(anilist_id) or anizip.get("logo") or None
+
+
+def hero_backdrop(banner: str | None, anizip: dict) -> str | None:
+    """The picture `backdrops.json` gives a title: the cached one, only where AniList has no banner.
+
+    A title with a banner is left out rather than written with it. The app already holds the
+    banner, from the same AniList record that put the title on its screen, so writing it here would
+    only make the file bigger. And it would be one day stale, beside a live one.
+    """
+    return None if banner else (anizip.get("backdrop") or None)
+
+
+def load_anizip(anilist_id: int) -> dict:
+    """One title's cached AniZip answer, or an empty one when the pass has not reached it."""
+    path = ANIZIP_DIR / f"{anilist_id}.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def cmd_anizip(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    ANIZIP_DIR.mkdir(parents=True, exist_ok=True)
+
+    only = episode_ids_arg(args.ids)
+    targets = []
+    for entry in catalog:
+        if only is not None:
+            # Named titles are re-fetched whatever the cache holds: naming one is the request.
+            if entry["id"] in only:
+                targets.append(entry)
+            continue
+        if args.airing_only and entry.get("status") not in {"RELEASING", "NOT_YET_RELEASED"}:
+            continue
+        if (ANIZIP_DIR / f"{entry['id']}.json").exists() and not args.refresh:
+            continue
+        targets.append(entry)
+    # Coverage is not spread evenly and neither is attention: the titles anyone opens nearly all
+    # have a logo, and the long tail nearly all does not. Walking in popularity order means a run
+    # that is stopped — or a --limit that is deliberately short — has still fetched the artwork for
+    # everything a viewer is likely to see, rather than for whichever ids happen to sort first.
+    if args.popular_first:
+        targets.sort(key=lambda entry: entry.get("popularity") or 0, reverse=True)
+    if args.limit:
+        targets = targets[: args.limit]
+
+    print(f"{len(targets)} titles to fetch (one at a time, {ANIZIP_MIN_INTERVAL}s apart)", flush=True)
+    session = requests.Session()
+    session.headers["User-Agent"] = "anilili-media-index/1.0"
+    # The same TMDB series id emit writes: the episode resolver's own answer first, the Fribb
+    # mapping second. Never the bundled id-map, whose TMDB ids are known to be wrong.
+    try:
+        token = tmdb_token(None)
+    except SystemExit:
+        # This pass predates the English logos and never needed a key; without one it still
+        # fetches everything it used to, just without the English preference.
+        print("  no TMDB token: logos stay AniZip's, whatever their language", flush=True)
+        token = None
+    fribb = load_fribb()
+
+    done = 0
+    with_logo = 0
+    with_ratings = 0
+    for entry in targets:
+        anilist_id = entry["id"]
+        try:
+            payload = anizip_payload(session, anilist_id, anizip_tmdb_id(anilist_id, fribb), token)
+        except Exception as error:  # noqa: BLE001 - one bad title must not end an hours-long run
+            print(f"  !! {anilist_id} {error}", flush=True)
+            time.sleep(ANIZIP_MIN_INTERVAL)
+            continue
+        (ANIZIP_DIR / f"{anilist_id}.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+        done += 1
+        if payload.get("logo"):
+            with_logo += 1
+        if payload.get("ratings"):
+            with_ratings += 1
+        if done % 100 == 0:
+            print(f"  {done}/{len(targets)} ({with_logo} logos, {with_ratings} rated)", flush=True)
+        time.sleep(ANIZIP_MIN_INTERVAL)
+
+    print(f"\ndone: {done} fetched, {with_logo} with a logo, {with_ratings} with episode scores")
+    return 0
+
+
+# --------------------------------------------------------------------------------------------
+# Schedule
+# --------------------------------------------------------------------------------------------
+#
+# One file per month of airing times, so the app's calendar draws a month — grid counts and every
+# day's episode list — from a single CDN read instead of a request per day against AniList. The
+# app's own live path stays as the fallback; see `MiruroRepository.schedule`.
+#
+# Why this is worth publishing rather than asking for at request time (measured 2026-09-12):
+#
+#   a month grid, live    1 aliased AniList request, 0.5-16.8s, then ~340ms per day tapped
+#   a month shard         one jsDelivr read, 22-87ms, and every day in it is then local
+#   a month, live         ~402KB on the wire at the field depth the day list already asks for
+#   a month shard         ~12KB gzipped, 462 rows
+#
+# It also takes the calendar off AniList's rate budget entirely, which matters because that budget
+# is shared with search and the detail pages and degrades to 30/min without warning.
+
+
+def schedule_days(month: str, pad_days: int = SCHEDULE_PAD_DAYS) -> list[tuple[int, int]]:
+    """The half-open [start, end) epoch-second windows a month's file covers, one per UTC day.
+
+    Padded a week either side of the month itself for two reasons. A calendar grid draws the days
+    that finish the neighbouring months — up to six of them — and the viewer's device buckets these
+    rows into *its* zone, not UTC, so a row that this function files under the 1st can belong to the
+    last day of the previous month on a device in Honolulu. A week covers both, which is what lets
+    one file serve a whole grid rather than three files stitched together.
+
+    Neighbouring months therefore overlap by a fortnight. That is deliberate: the reader deduplicates
+    by (airingAt, id) the same way the live path does, so an episode present in both files is one row.
+    """
+    year, mon = (int(part) for part in month.split("-"))
+    first = datetime(year, mon, 1, tzinfo=timezone.utc)
+    # December rolls to January of the next year; `mon // 12` is 1 only for December.
+    next_first = datetime(year + (mon // 12), (mon % 12) + 1, 1, tzinfo=timezone.utc)
+    windows: list[tuple[int, int]] = []
+    cursor = first - timedelta(days=pad_days)
+    end = next_first + timedelta(days=pad_days)
+    while cursor < end:
+        following = cursor + timedelta(days=1)
+        windows.append((int(cursor.timestamp()), int(following.timestamp())))
+        cursor = following
+    return windows
+
+
+def schedule_query(windows: list[tuple[int, int]]) -> str:
+    """One query asking for every day in [windows] at once, each as its own aliased `Page`.
+
+    A day per request would cost ~45 requests per month against a budget that degrades to 30/min,
+    and paging a whole month as one range costs about ten. Aliased, a month is two requests and two
+    rate-limit units whatever it holds.
+
+    The alias count is capped by AniList's query complexity limit rather than by anything here: the
+    ceiling is 500 and this shape costs 18 a day, which is why `SCHEDULE_DAYS_PER_REQUEST` is 27.
+    Adding a field to the selection below lowers that number — an overrun is answered with a plain
+    HTTP 400 naming the complexity, not with a partial result.
+    """
+    fields = (
+        "episode airingAt media { id title { english romaji native } "
+        "coverImage { extraLarge large } format seasonYear isAdult }"
+    )
+    lines = ["query {"]
+    for index, (start, end) in enumerate(windows):
+        # AniList compares strictly, so both bounds move out by one second to stay half-open.
+        lines.append(
+            f"  d{index}: Page(page: 1, perPage: {SCHEDULE_PAGE_SIZE}) {{ "
+            f"pageInfo {{ hasNextPage }} "
+            f"airingSchedules(airingAt_greater: {start - 1}, airingAt_lesser: {end}, sort: TIME) "
+            f"{{ {fields} }} }}"
+        )
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def schedule_row(entry: dict) -> dict | None:
+    """One airing as the app stores it, or None for an entry with no title behind it.
+
+    The fields are exactly what a schedule row renders — `title.preferred` falls back
+    english → romaji → native and `coverImage.best` prefers extraLarge, so those are carried rather
+    than a single pre-picked string, which would freeze the app's own preference order into the
+    dataset. Nulls are dropped: the reader defaults them and a month is mostly nulls.
+
+    The exception is `native`, which is written only when it is the only title there is. It is the
+    last rung of that fallback and almost never reached — across 2026-09, 663 rows, the number with
+    no english *and* no romaji was zero — but it is a full Japanese title string on every row, so
+    carrying it unconditionally cost 28% of the compressed file to answer a question nobody asked
+    (22,192 bytes against 15,915). Written conditionally the fallback still works for the row that
+    one day needs it, and costs nothing for the ones that do not.
+    """
+    media = entry.get("media") or {}
+    if not media.get("id"):
+        return None
+    title = media.get("title") or {}
+    cover = media.get("coverImage") or {}
+    row = {
+        "id": media["id"],
+        "episode": entry.get("episode"),
+        "airingAt": entry.get("airingAt"),
+        "english": title.get("english"),
+        "romaji": title.get("romaji"),
+        "native": (
+            title.get("native")
+            if not title.get("english") and not title.get("romaji")
+            else None
+        ),
+        "cover": cover.get("extraLarge") or cover.get("large"),
+        "format": media.get("format"),
+        "year": media.get("seasonYear"),
+        # Carried unfiltered so the viewer's own setting decides at read time, the way the live
+        # path already does. Filtering here would bake one audience's answer into the CDN.
+        "adult": True if media.get("isAdult") else None,
+    }
+    return {key: value for key, value in row.items() if value is not None}
+
+
+def schedule_rows(pages: dict, windows: list[tuple[int, int]], month: str) -> list[dict]:
+    """Flatten one response into deduplicated, stably ordered rows.
+
+    Sorted rather than left in arrival order because this file is rewritten daily and committed: an
+    unstable order would show up as a changed file every single day, which costs a purge and makes
+    the diff useless for seeing what actually moved.
+
+    Sorted by *title* rather than by time, which the reader does not care about either way — it has
+    to bucket these into the device's own zone regardless — but gzip cares a great deal. A title's
+    four or five weekly airings repeat its name and cover URL verbatim; in time order those copies
+    land ~45KB apart, outside gzip's 32KB window, and the month compresses 2.3x worse (measured on
+    2026-09: 50,602 bytes by time against 22,190 by title, for byte-identical content).
+    """
+    rows: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    for index in range(len(windows)):
+        page = pages.get(f"d{index}")
+        if page is None:
+            continue
+        if page.get("pageInfo", {}).get("hasNextPage"):
+            # 50 in a day has never been observed (31 was the busiest measured), so this is a
+            # loud warning rather than paging support that would never run.
+            print(f"  WARNING {month} day {index} overflowed one page — rows are missing", flush=True)
+        for entry in page.get("airingSchedules") or []:
+            row = schedule_row(entry)
+            if row is None:
+                continue
+            key = (row["airingAt"], row["id"])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    rows.sort(key=schedule_order)
+    return rows
+
+
+def schedule_order(row: dict) -> tuple[int, int]:
+    """Title first, then time — see `schedule_rows` for why this is not sorted by time.
+
+    Keyed on the id rather than on the title itself, which sorts the same titles together just as
+    well: one id is one title, so its rows carry byte-identical name and cover strings either way,
+    and an id cannot be absent or null the way every one of the three title forms can.
+    """
+    return (row["id"], row["airingAt"])
+
+
+def forward_months(count: int, today: datetime | None = None) -> list[str]:
+    """The current month and the next ones, as `YYYY-MM`.
+
+    The window is forward-only because the months behind it need no refreshing: once a day has
+    aired its rows are settled, and the file written while that month was current is already final.
+    The archive is simply what the rolling window leaves behind.
+    """
+    now = today or datetime.now(timezone.utc)
+    months = []
+    year, mon = now.year, now.month
+    for _ in range(max(count, 1)):
+        months.append(f"{year:04d}-{mon:02d}")
+        year, mon = year + (mon // 12), (mon % 12) + 1
+    return months
+
+
+def cmd_schedule(args: argparse.Namespace) -> int:
+    out = pathlib.Path(args.out)
+    session = requests.Session()
+    session.headers.update(
+        {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "Anilili-konoha-build (AniList client 45552)",
+            # Same reason as the catalog walk: no Referer earns a 403 that reads like an outage.
+            "Referer": "android-app://com.miruronative",
+        }
+    )
+    anilist = AniList(session, args.min_interval)
+
+    months = args.month or forward_months(args.months)
+    for month in months:
+        path = out / "schedule" / f"{month}.json"
+        if args.skip_existing and path.exists():
+            print(f"{month} already published, leaving it alone", flush=True)
+            continue
+        windows = schedule_days(month)
+        rows: list[dict] = []
+        for start in range(0, len(windows), args.days_per_request):
+            chunk = windows[start : start + args.days_per_request]
+            pages = anilist.post(schedule_query(chunk), {}, label=f"schedule {month} day {start}")
+            rows.extend(schedule_rows(pages, chunk, month))
+        # The chunks overlap nothing, but the pad days do overlap the neighbouring months, so the
+        # dedupe has to run across the whole file and not just within a chunk.
+        deduped: list[dict] = []
+        seen: set[tuple[int, int]] = set()
+        for row in rows:
+            key = (row["airingAt"], row["id"])
+            if key not in seen:
+                seen.add(key)
+                deduped.append(row)
+        # Each chunk sorted itself, but concatenating them does not, and the ordering is what keeps
+        # the file compressible and its daily diff meaningful.
+        deduped.sort(key=schedule_order)
+        _write(path, deduped)
+        titles = len({row["id"] for row in deduped})
+        print(f"{month} {len(deduped)} rows, {titles} titles -> {path}", flush=True)
+    return 0
+
+
+# --------------------------------------------------------------------------------------------
+# Emit
+# --------------------------------------------------------------------------------------------
+
+
+def _write(path: pathlib.Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+
+
+# The app's own season-chain limits (MiruroRepository.MAX_SERIES_ENTRIES / MAX_SERIES_DEPTH).
+MAX_SERIES_ENTRIES = 16
+MAX_SERIES_DEPTH = 8
+
+
+def season_neighbors(entry: dict) -> list[int]:
+    """PREQUEL and SEQUEL relations, as `Media.seasonNeighbors` reads them in the app."""
+    ids: list[int] = []
+    for edge in ((entry.get("relations") or {}).get("edges") or []):
+        node = edge.get("node") or {}
+        if edge.get("relationType") in ("PREQUEL", "SEQUEL") and node.get("id") and node["id"] not in ids:
+            ids.append(node["id"])
+    return ids
+
+
+def series_chain(root_id: int, by_id: dict[int, dict]) -> list[int]:
+    """Every season reachable through prequel/sequel links, walked the way the app walks it.
+
+    A port of `walkSeriesChain`: breadth first from the title, at most MAX_SERIES_ENTRIES entries
+    and MAX_SERIES_DEPTH hops. The app used to do this one AniList request per season on every cold
+    open of a franchise; it is the same walk over the catalogue already in memory. Adult filtering
+    and airing order stay on the device, which knows the viewer's setting.
+    """
+    found = [root_id]
+    expanded: set[int] = set()
+    frontier = [root_id]
+    depth = 0
+    while frontier and len(found) < MAX_SERIES_ENTRIES and depth < MAX_SERIES_DEPTH:
+        batch = [i for i in frontier if i not in expanded][: MAX_SERIES_ENTRIES - len(found) + 1]
+        expanded.update(batch)
+        if not batch:
+            break
+        nxt: list[int] = []
+        for media_id in batch:
+            for neighbor in season_neighbors(by_id.get(media_id) or {}):
+                if neighbor not in found and len(found) < MAX_SERIES_ENTRIES:
+                    found.append(neighbor)
+                if neighbor not in expanded and neighbor not in nxt:
+                    nxt.append(neighbor)
+        frontier = nxt
+        depth += 1
+    return found
+
+
+def app_record(entry: dict) -> dict:
+    """The AniList record in the shape the app's `Media` decodes, minus what the tree says elsewhere.
+
+    Recommendations are left out here and written beside it; `nextAiringEpisode` stays, but the app
+    only trusts this record for titles that have stopped airing.
+    """
+    record = {k: v for k, v in entry.items() if k != "recommendations"}
+    return record
+
+
+def recommendation_nodes(entry: dict) -> list[dict]:
+    nodes = ((entry.get("recommendations") or {}).get("nodes")) or []
+    return [n["mediaRecommendation"] for n in nodes if n.get("mediaRecommendation") and (n.get("rating") or 0) > 0]
+
+
+def _slug(title: str, anilist_id: int) -> str:
+    base = re.sub(r"[^a-z0-9]+", "-", (title or "").lower()).strip("-")
+    return f"{base}-{anilist_id}" if base else str(anilist_id)
+
+
+def cmd_emit(args: argparse.Namespace) -> int:
+    catalog = load_catalog()
+    out = pathlib.Path(args.out)
+
+    # Read before --clean runs, which deletes the very file this carries forward from. Getting this
+    # order wrong silently drops every Kitsu, AniDB and Simkl id on the first cleaned rebuild.
+    carried = previous_id_map(out)
+    fribb = load_fribb(args.refresh_fribb)
+    print(f"fribb cross-reference: {len(fribb)} AniList ids")
+
+    # Independently published dub positives must survive a clean episode-tree rebuild.
+    dub_path = out / "dub-index.json"
+    dub_index = dub_path.read_bytes() if dub_path.is_file() else None
+    if out.exists() and args.clean:
+        shutil.rmtree(out)
+    out.mkdir(parents=True, exist_ok=True)
+    if dub_index is not None:
+        dub_path.write_bytes(dub_index)
+
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    index_rows: list[dict] = []
+    id_map: dict[str, dict] = {}
+    airing: list[dict] = []
+    genres: dict[str, int] = {}
+    years: dict[str, int] = {}
+    formats: dict[str, int] = {}
+    statuses: dict[str, int] = {}
+    # AniList id -> landscape picture for the TV hero, for titles with no banner; see hero_backdrop.
+    # One file rather than a field in each index.json: Home shows a dozen titles at once and opens
+    # none of their pages, so per-title files would be a dozen reads before the hero could draw.
+    backdrops: dict[str, str] = {}
+    episode_count = 0
+
+    by_id = {entry["id"]: entry for entry in catalog}
+    for entry in catalog:
+        anilist_id = entry["id"]
+        titles = entry.get("title") or {}
+        display = titles.get("english") or titles.get("romaji") or titles.get("native") or ""
+        images = entry.get("coverImage") or {}
+        start = entry.get("startDate") or {}
+        year = entry.get("seasonYear") or start.get("year")
+        status = entry.get("status")
+        fmt = entry.get("format")
+
+        index_rows.append(
+            {
+                "id": anilist_id,
+                "title": display,
+                "slug": _slug(display, anilist_id),
+                "poster": images.get("large"),
+                "poster_color": images.get("color"),
+                "year": year,
+                "status": status,
+                "format": fmt,
+                "episodes": entry.get("episodes"),
+                "score": entry.get("averageScore"),
+                "popularity": entry.get("popularity"),
+                "genres": entry.get("genres") or [],
+            }
+        )
+
+        for value, bucket in ((fmt, formats), (status, statuses)):
+            if value:
+                bucket[value] = bucket.get(value, 0) + 1
+        for genre in entry.get("genres") or []:
+            genres[genre] = genres.get(genre, 0) + 1
+        if year:
+            years[str(year)] = years.get(str(year), 0) + 1
+
+        # Per-title detail, in the shape KonohaClient.KonohaDetail parses.
+        detail = {
+            "ids": {"anilist": anilist_id, "mal": entry.get("idMal")},
+            "titles": {
+                "romaji": titles.get("romaji"),
+                "english": titles.get("english"),
+                "native": titles.get("native"),
+            },
+            "format": fmt,
+            "status": status,
+            "season": entry.get("season"),
+            "season_year": year,
+            "episodes": entry.get("episodes"),
+            "duration": entry.get("duration"),
+            "description": entry.get("description"),
+            "genres": entry.get("genres") or [],
+            "score_anilist": entry.get("averageScore"),
+            "popularity": entry.get("popularity"),
+            "images": {
+                "poster": images.get("large"),
+                "poster_color": images.get("color"),
+                "banner": entry.get("bannerImage"),
+            },
+        }
+        # The full record, the season chain and the recommendations, so a title page is built from
+        # the tree instead of from one AniList request per season plus one for the recommendations.
+        # Only written from a catalogue walked with the full query; an older work file has no
+        # relations, and a chain built from it would be every title alone.
+        if "relations" in entry:
+            detail["anilist"] = app_record(entry)
+            detail["series"] = series_chain(anilist_id, by_id)
+            detail["recommendations"] = recommendation_nodes(entry)
+        # Written only when there is one. An absent key and a null both read as "no logo" to the
+        # app, and the tree is served to every device on every title page — a null per title is
+        # 20,811 nulls on the wire for nothing.
+        anizip = load_anizip(anilist_id)
+        logo = series_logo(anilist_id, anizip)
+        if logo:
+            detail["images"]["logo"] = logo
+        backdrop = hero_backdrop(entry.get("bannerImage"), anizip)
+        if backdrop:
+            backdrops[str(anilist_id)] = backdrop
+        shard = anilist_id // 1000
+        _write(out / "anime" / str(shard) / str(anilist_id) / "index.json", detail)
+
+        cached = EPISODE_DIR / f"{anilist_id}.json"
+        episodes_path = out / "anime" / str(shard) / str(anilist_id) / "episodes.json"
+        tmdb_id = None
+        if cached.exists():
+            payload = json.loads(cached.read_text(encoding="utf-8"))
+            episodes = payload.get("episodes") or []
+            tmdb_id = payload.get("tmdb_id")
+            # TMDB stays the source for what an episode is called and looks like; AniZip supplies
+            # only the score, keyed by the same position-based number the rows already carry.
+            ratings = anizip.get("ratings") or {}
+            if ratings:
+                for episode in episodes:
+                    number = episode.get("number")
+                    if number is None:
+                        continue
+                    score = ratings.get(str(int(number)))
+                    if score is not None:
+                        episode["rating"] = score
+            if episodes:
+                _write(episodes_path, episodes)
+                episode_count += len(episodes)
+            elif episodes_path.exists():
+                # A title that used to resolve and no longer does must lose its file, not keep the
+                # old one. Without this a correction can never reach a device: the run that stopped
+                # matching writes nothing, the previous run's episodes.json stays on the CDN, and
+                # the wrong episode list outlives the fix that was supposed to remove it.
+                episodes_path.unlink()
+
+        previous = carried.get(str(anilist_id), {})
+        cross = fribb.get(anilist_id)
+        mal_id = entry.get("idMal")
+        # Kitsu, AniDB and Simkl come from Fribb now rather than being carried forward from a dead
+        # mirror. Konoha had almost none of them — AniList 1 shipped `kitsu: null, simkl: null` —
+        # and there was no way to regenerate what it did have, so every rebuild could only preserve
+        # or lose them. Fribb states them for most of the catalogue and is rebuilt weekly.
+        # Carry-forward stays as a floor for the 9% Fribb has never heard of.
+        id_map[str(anilist_id)] = {
+            # A TMDB id this run verified through titles_match, else Fribb's, else what was there.
+            # `confidence` is advisory only; the app re-checks any id before it puts stills on a
+            # page, which is why a merely-stated id is still worth writing.
+            "tmdb": tmdb_id or (cross.tmdb_id if cross else None) or previous.get("tmdb"),
+            "tmdb_type": "tv" if (tmdb_id or (cross and cross.tmdb_id)) else previous.get("tmdb_type"),
+            "mal": mal_id or (cross.mal_id if cross else None),
+            "kitsu": (cross.kitsu_id if cross else None) or previous.get("kitsu"),
+            "anidb": (cross.anidb_id if cross else None) or previous.get("anidb"),
+            "simkl": (cross.simkl_id if cross else None) or previous.get("simkl"),
+            # TheTVDB groups a series the way viewers talk about it — one series id, one season per
+            # AniList entry — which AniList itself has no concept of. It is what the season chain on
+            # the detail page is built from; see DetailData.seasons.
+            "tvdb": cross.tvdb_id if cross else None,
+            "tvdb_season": cross.tvdb_season if cross else None,
+            "confidence": "HIGH" if tmdb_id else ("MAPPED" if cross and cross.tmdb_id else previous.get("confidence")),
+            "updated_at": now,
+        }
+        if mal_id:
+            _write(out / "mappings" / "mal" / str(mal_id // 1000) / f"{mal_id}.json", {"anilist_id": anilist_id})
+
+        upcoming = entry.get("nextAiringEpisode")
+        if upcoming:
+            airing.append(
+                {
+                    "id": anilist_id,
+                    "title": display,
+                    "next_episode": upcoming.get("episode"),
+                    "next_airing_at": datetime.fromtimestamp(
+                        upcoming["airingAt"], timezone.utc
+                    ).isoformat().replace("+00:00", "Z"),
+                    "last_checked": now,
+                }
+            )
+
+    _write(out / "index.json", index_rows)
+    _write(out / "id-map.json", id_map)
+    _write(out / "airing.json", airing)
+    _write(out / "backdrops.json", {"v": 1, "titles": backdrops})
+    _write(out / "genres.json", sorted(genres))
+    _write(out / "years.json", sorted(years, reverse=True))
+    _write(
+        out / "stats.json",
+        {
+            "total": len(index_rows),
+            "formats": formats,
+            "statuses": statuses,
+            "episodes": episode_count,
+            "last_updated": now,
+        },
+    )
+    _write(
+        out / "sync-status.json",
+        {"source": "anilist+tmdb", "generator": "scripts/konoha_build.py", "last_updated": now},
+    )
+
+    print(f"titles      {len(index_rows)}")
+    print(f"episodes    {episode_count}")
+    print(f"airing      {len(airing)}")
+    print(f"backdrops   {len(backdrops)}")
+    print(f"tmdb linked {sum(1 for v in id_map.values() if v['tmdb'])}")
+    print(f"\nwrote {out}")
+    return 0
+
+
+def cmd_assets(args: argparse.Namespace) -> int:
+    """Copy the two files the APK bundles.
+
+    index.json is the offline catalogue LocalCatalog reads when AniList cannot be reached;
+    id-map.json is the MAL/TMDB cross-reference KonohaClient loads at startup.
+
+    The bundle is allowed to be smaller than the published tree, and should be. The tree is what a
+    device queries and needs to be complete; the bundle is a floor for the day AniList returns 403
+    to everyone, it costs APK size on every install forever, and it goes stale the moment it ships.
+    Trimming what nobody would search for in an anime app buys back most of the growth: the full
+    catalogue is 20,778 titles and 6.9 MB against the 9,978 and 4.5 MB that shipped before, and
+    2,616 of the new ones are MUSIC — anime music videos, which are not a streaming fallback.
+    """
+    out = pathlib.Path(args.out)
+    for name in ("index.json", "id-map.json"):
+        if not (out / name).exists():
+            raise SystemExit(f"{out / name} missing — run `emit` first.")
+
+    dropped_formats = {value.strip().upper() for value in args.drop_formats.split(",") if value.strip()}
+    rows = json.loads((out / "index.json").read_text(encoding="utf-8"))
+    kept = [
+        row
+        for row in rows
+        if row.get("format") not in dropped_formats
+        and (row.get("popularity") or 0) >= args.min_popularity
+    ]
+
+    target = ASSETS / "index.json"
+    before = target.stat().st_size if target.exists() else 0
+    target.write_text(
+        json.dumps(kept, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
+    print(
+        f"index.json: {len(rows):,} titles -> {len(kept):,} kept "
+        f"({before:,} -> {target.stat().st_size:,} bytes)"
+    )
+
+    # The id-map is not trimmed with it. It is keyed by AniList id and read on a lookup for a title
+    # the viewer already reached, so a row for a title missing from the offline catalogue still gets
+    # used — dropping those rows would break MAL resolution for exactly the obscure titles that
+    # need it most.
+    target = ASSETS / "id-map.json"
+    before = target.stat().st_size if target.exists() else 0
+    shutil.copyfile(out / "id-map.json", target)
+    print(f"id-map.json: {before:,} -> {target.stat().st_size:,} bytes")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    catalog = commands.add_parser("catalog", help="page AniList for every anime")
+    catalog.add_argument("--per-page", type=int, default=50, help="AniList caps this at 50")
+    catalog.add_argument(
+        "--from-year", type=int, default=1900, help="first broadcast year to walk (default 1900)"
+    )
+    catalog.add_argument(
+        "--min-interval",
+        type=float,
+        default=MIN_INTERVAL,
+        help=f"seconds between requests, raised automatically on 429 (default {MIN_INTERVAL})",
+    )
+    catalog.add_argument(
+        "--no-resume",
+        dest="resume",
+        action="store_false",
+        help="start from id 0 instead of continuing the cached walk",
+    )
+    catalog.set_defaults(func=cmd_catalog, resume=True)
+
+    episodes = commands.add_parser("episodes", help="fetch TMDB episode lists")
+    episodes.add_argument("--token", help="TMDB v4 read token (default: env or gradle properties)")
+    episodes.add_argument(
+        "--out",
+        default=str(WORK / "data"),
+        help="published tree to take TMDB hints from, if one exists yet",
+    )
+    episodes.add_argument("--workers", type=int, default=8)
+    episodes.add_argument("--limit", type=int, default=0)
+    episodes.add_argument("--refresh", action="store_true", help="re-fetch titles already cached")
+    episodes.add_argument(
+        "--refresh-fribb", action="store_true", help="re-download the cross-reference before running"
+    )
+    episodes.add_argument(
+        "--ids",
+        help="re-fetch only these AniList ids: comma-separated, or @file with one id per line",
+    )
+    episodes.add_argument(
+        "--airing-only",
+        action="store_true",
+        help="only RELEASING/NOT_YET_RELEASED titles — the daily refresh",
+    )
+    episodes.set_defaults(func=cmd_episodes)
+
+    anizip = commands.add_parser(
+        "anizip", help="fetch AniZip logos and episode scores (keyless; slow by design)"
+    )
+    anizip.add_argument("--limit", type=int, default=0)
+    anizip.add_argument(
+        "--popular-first",
+        action="store_true",
+        help="walk the catalogue most-opened first, so a short run still covers what viewers see",
+    )
+    anizip.add_argument("--refresh", action="store_true", help="re-fetch titles already cached")
+    anizip.add_argument(
+        "--ids",
+        help="fetch only these AniList ids: comma-separated, or @file with one id per line",
+    )
+    anizip.add_argument(
+        "--airing-only",
+        action="store_true",
+        help="only RELEASING/NOT_YET_RELEASED titles — the daily refresh",
+    )
+    anizip.set_defaults(func=cmd_anizip)
+
+    schedule = commands.add_parser("schedule", help="write per-month airing times for the calendar")
+    schedule.add_argument("--out", default=str(WORK / "data"))
+    schedule.add_argument(
+        "--months",
+        type=int,
+        default=2,
+        help="how many months from this one to (re)write — the current one and the next by default,"
+        " because a viewer stepping forward on the last day of a month needs the next one to exist",
+    )
+    schedule.add_argument(
+        "--month",
+        action="append",
+        metavar="YYYY-MM",
+        help="write exactly this month instead of the forward window; repeatable, for backfilling",
+    )
+    schedule.add_argument(
+        "--skip-existing",
+        action="store_true",
+        help="leave months that already have a file alone — for a backfill that must not re-spend "
+        "the budget on work a previous run finished",
+    )
+    schedule.add_argument("--days-per-request", type=int, default=SCHEDULE_DAYS_PER_REQUEST)
+    schedule.add_argument("--min-interval", type=float, default=MIN_INTERVAL)
+    schedule.set_defaults(func=cmd_schedule)
+
+    emit = commands.add_parser("emit", help="write the publishable tree")
+    emit.add_argument("--out", default=str(WORK / "data"))
+    emit.add_argument("--clean", action="store_true", help="delete the output tree first")
+    emit.add_argument(
+        "--refresh-fribb", action="store_true", help="re-download the cross-reference before running"
+    )
+    emit.set_defaults(func=cmd_emit)
+
+    assets = commands.add_parser("assets", help="copy bundled files into app assets")
+    assets.add_argument("--out", default=str(WORK / "data"))
+    assets.add_argument(
+        "--drop-formats",
+        default="MUSIC",
+        help="comma-separated formats to leave out of the bundled catalogue (default MUSIC)",
+    )
+    assets.add_argument(
+        "--min-popularity",
+        type=int,
+        default=0,
+        help="leave titles below this AniList popularity out of the bundled catalogue",
+    )
+    assets.set_defaults(func=cmd_assets)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

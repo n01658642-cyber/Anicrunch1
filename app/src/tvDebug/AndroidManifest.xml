@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    TV debug builds only: the launcher entry moves off MainActivity onto an alias with a class name
+    of its own.
+
+    LineageOS's TV launcher (Catapult) de-duplicates its app list by launch activity *class name*
+    alone, ignoring the package — InstalledAppsFlow's distinctBy { activityInfo.name }. The debug
+    build installs beside the release app (".debug" suffix) with the same com.anilili.MainActivity,
+    so the launcher kept only the release app and the debug build could not be opened from the TV
+    at all. An alias resolves to its own name, so the two now list separately. Release builds keep
+    the entry on MainActivity itself, where pinned Fire TV tiles point.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity android:name="com.anilili.MainActivity">
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter tools:node="remove">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name="com.anilili.DebugLauncher"
+            android:exported="true"
+            android:targetActivity="com.anilili.MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+    </application>
+
+</manifest>

@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">Anime</string>
+    <string name="download_notification_channel_name">Episode downloads</string>
+    <string name="download_notification_channel_description">Progress for episodes saved for offline viewing</string>
+    <plurals name="download_batch_completed">
+        <item quantity="one">%1$d episode downloaded</item>
+        <item quantity="other">%1$d episodes downloaded</item>
+    </plurals>
+    <plurals name="download_batch_failed">
+        <item quantity="one">%1$d episode failed to download</item>
+        <item quantity="other">%1$d episodes failed to download</item>
+    </plurals>
+    <string name="download_batch_mixed">%1$d downloaded · %2$d failed</string>
+    <string name="download_batch_line_failed">%1$s · failed</string>
+    <string name="export_notification_channel_name">Saving to Downloads</string>
+    <string name="export_notification_channel_description">Progress while an episode is written to the Downloads folder as MP4</string>
+    <string name="export_notification_title">Saving episode to Downloads</string>
+    <string name="export_notification_preparing">Preparing the MP4…</string>
+    <string name="export_notification_progress">Building the MP4 · %1$d%%</string>
+    <string name="external_playback_notification_channel_name">External playback</string>
+    <string name="external_playback_notification_channel_description">Keeps protected streams available to another player</string>
+    <string name="external_playback_notification_title">Playing in another app</string>
+    <string name="external_playback_notification_description">Anilili is keeping this stream available</string>
+    <string name="external_playback_notification_stop">Stop</string>
+    <string name="diagnostics_shortcut_short">Diagnostics</string>
+    <string name="diagnostics_shortcut_long">Send diagnostics</string>
+    <string name="diagnostics_shortcut_disabled">Diagnostics are unavailable</string>
+</resources>
