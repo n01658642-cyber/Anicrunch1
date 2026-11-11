@@ -2313,6 +2313,7 @@ object SettingsStore {
     // Boolean from an Int, and guessing from the JSON is how a String ends up under a Boolean key.
 
     private val BACKUP_BOOLEAN_KEYS = listOf(
+        PARALLEL_DOWNLOADS,
         AUTOPLAY,
         BROWSE_HEADER_COLLAPSED,
         PLAY_ON_OPEN,
@@ -2417,7 +2418,6 @@ object SettingsStore {
         APP_BACKDROP_ANIME_TITLE,
         APP_BACKDROP_DIM,
         DOWNLOAD_QUALITY,
-        PARALLEL_DOWNLOADS,
         DOWNLOAD_DESTINATION,
         EPISODE_LAYOUT,
         EPISODE_ORDER,
