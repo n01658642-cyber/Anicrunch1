@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 9 and earlier need legacy write access for Downloads/Anilili. The max SDK keeps
+         this broad permission completely out of Android 10+'s scoped-storage path. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.faketouch" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+
+    <!-- Android 11+ hides other packages unless they are declared here, and the save-location
+         setting only offers "Choose a folder…" when it can see a picker to open. Plenty of
+         television builds genuinely ship none, so the answer has to be the truth rather than a
+         row that leads nowhere. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
+        <!-- "From this TV" in the profile picture grid is offered only when something can pick an
+             image; most television boxes ship no file picker at all. -->
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <category android:name="android.intent.category.OPENABLE" />
+            <data android:mimeType="image/*" />
+        </intent>
+        <!-- The Discord sign-in prefers the system browser, where the viewer is usually already
+             signed in, and falls back to the in-app login WebView when there is none — which is
+             the normal state of affairs on a television. Answering that question needs package
+             visibility for browsers; without this, Android 11+ reports none and every device
+             would take the fallback. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- Handing an episode to another player has always worked without this, because an
+             implicit startActivity is resolved by the system and package visibility never applied
+             to it. *Naming* the players does need it: queryIntentActivities is filtered, so
+             without this the external-player picker would find nothing on Android 11+ and the
+             viewer could only take whatever the system chooser decided to offer. Same shape as
+             the hand-off itself — a video type on an http URL — so the list is the set of apps
+             that would actually receive the episode, not a guess. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" android:mimeType="video/*" />
+        </intent>
+    </queries>
+
+    <!--
+        largeHeap: the app runs a Compose UI, an ExoPlayer, and up to two WebViews (the resolver
+        bridge and an embed player) in one process. On a Fire TV stick the standard ceiling is
+        192 MB, and a heap-exhaustion OutOfMemoryError lands wherever the next allocation happens
+        to be — one crash report died inside a routine SharedPreferences write. Devices flagged
+        low-RAM ignore the flag, so it only lifts the ceiling where there is memory to lift it to.
+    -->
+    <!-- The banner points straight at the PNG: Fire OS's launcher has been observed failing to
+         inflate an XML <bitmap> wrapper for the banner and falling back to the small icon tile. -->
+    <application
+        android:name=".MiruroApp"
+        android:allowBackup="false"
+        android:banner="@drawable/tv_banner_art"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:largeHeap="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MiruroNative"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.MiruroNative">
+            <!-- The LAUNCHER entry is per flavor: the TV manifest puts it back here unchanged, and
+                 the mobile manifest hangs it on one activity-alias per app-icon colour. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            `anilili://` links (anime, watch, search), the format both Anilili apps share. Forwarded
+            to MainActivity, which reads them; see AnililiLinkActivity for why the filter is not on
+            MainActivity itself. Both flavors get it, though a television has no browser to tap a
+            link in: there it is reached by adb or another app.
+        -->
+        <activity
+            android:name=".AnililiLinkActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="anilili" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            The Discord sign-in hand-off. Discord's registered mobile redirect is
+            `discord-<application id>:/authorize/callback` — one slash, which is why the path and
+            not the host carries the callback. Exported because the system browser is what
+            delivers it; it accepts nothing but that scheme and stores nothing itself.
+        -->
+        <activity
+            android:name=".data.discord.DiscordOAuthCallbackActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="discord-1545324837306634250" />
+            </intent-filter>
+        </activity>
+
+        <!-- Restarts the app into another local profile; see Profiles.switchTo. Its own process so
+             it can outlive the one it kills. -->
+        <activity
+            android:name=".data.profiles.ProfileRestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":profile_restart"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity
+            android:name=".diagnostics.ShareDiagnosticsActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:process=":diagnostics"
+            android:theme="@style/Theme.MiruroNative" />
+
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".playback.LocalStreamProxyService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <service
+            android:name=".playback.EpisodeDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="androidx.media3.exoplayer.downloadService.action.RESTART" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!--
+            EpisodeDownloadService hands Media3 a PlatformScheduler so paused downloads resume when
+            their requirements are met again. PlatformScheduler schedules work against this
+            JobService, and JobScheduler rejects a component the manifest never declared:
+            "IllegalArgumentException: No such service" killed the app on the main thread whenever
+            the download manager reconsidered its queue.
+        -->
+        <service
+            android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!--
+            MP4 exports run as long-running WorkManager work, which promotes WorkManager's own
+            service to the foreground. From Android 14 that service must carry a type, and only
+            the app's manifest can give it one.
+        -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true"
+            android:process=":diagnostics">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <receiver
+            android:name=".data.reminder.AiringReminderReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".data.reminder.AutomaticReleaseReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".data.reminder.ReminderRescheduleReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

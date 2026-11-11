@@ -1,0 +1,24 @@
+<!--
+  Episode order, descending (newest first): the arrow points down and the bars shorten as they fall,
+  the numbers getting smaller down the list. ic_sort_ascending is its mirror. Our own drawing in the
+  common arrow-beside-bars style, as Material Icons has no sort glyph that shows a direction.
+  Tinted at the call site, so the colour here is only a sane default.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+  <path
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="2"
+      android:strokeLineCap="round"
+      android:strokeLineJoin="round"
+      android:pathData="M6,4.5V19.5M2.5,16 6,19.5 9.5,16"/>
+  <path
+      android:strokeColor="#FFFFFFFF"
+      android:strokeWidth="2"
+      android:strokeLineCap="round"
+      android:pathData="M13,6H21M13,12H18.5M13,18H16"/>
+</vector>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="updates" path="updates/" />
+    <cache-path name="diagnostics" path="diagnostics/" />
+    <files-path name="download-subtitles" path="episode-download-subtitles/" />
+    <cache-path name="imported-subtitles" path="external-subtitles/" />
+</paths>

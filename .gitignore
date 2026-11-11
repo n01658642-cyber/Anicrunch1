@@ -1,0 +1,50 @@
+*.iml
+.DS_Store
+
+# Android and Gradle output
+.gradle/
+.kotlin/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Android release material
+*.apk
+*.ap_
+*.aab
+*.jks
+*.keystore
+keystore.properties
+nostr-update-key.properties
+scripts/.venv/
+
+# Local/editor state
+.idea/
+.vscode/
+
+# Generated or discarded project artifacts
+__pycache__/
+*.py[cod]
+graphify-out/
+tmp/
+# Device screenshots and uiautomator dumps taken while debugging. Hundreds of megabytes that
+# `git add -A` would happily stage, which is the accident this file exists to prevent.
+.tmp-shots/
+.tmp-diag/
+worker/
+Anivexa-API-main/
+MiruroAPI-2.3.0/
+MiruroAPI-2.3.0.zip
+anilili-showcase.zip
+
+# Keep only the curated mobile and TV screenshots in showcase.
+showcase/*
+!showcase/mobile/
+showcase/mobile/*
+!showcase/mobile/*.webp
+!showcase/tv/
+showcase/tv/*
+!showcase/tv/*.webp

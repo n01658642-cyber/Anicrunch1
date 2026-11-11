@@ -1,0 +1,888 @@
+{
+  "date": "2026-09-22",
+  "gitHead": "a85d70bd3a3d",
+  "scope": "Read-only investigation; no Android production changes. Desktop HTTP probes, not device first-frame measurements.",
+  "inputs": [
+    {
+      "name": "anikototv.to.har",
+      "bytes": 99326733,
+      "sha256": "8f7646ecf2cc24f875a045123f7aff81e7af6de9a7bdaa445cac867c67c7773c"
+    },
+    {
+      "name": "app.main.js",
+      "bytes": 4547,
+      "sha256": "df51665f950519e016e9a40844b852fce63ef0ff115e81feac5ee10f8a594ff8"
+    },
+    {
+      "name": "cast_sender.js",
+      "bytes": 4272,
+      "sha256": "ee147e859ad0f09aa50367974e38ab53e7c7054c4a51d400a7f45b0eb251454f"
+    },
+    {
+      "name": "e1-player.min.js",
+      "bytes": 97393,
+      "sha256": "4fa33b780975685ccb78d173300f1bd2980e857b8c31b898251aaff323446069"
+    },
+    {
+      "name": "ep-25",
+      "bytes": 82522,
+      "sha256": "e13e02e67f7791455ae9f50473d9e2b7249b2f511c7e1e475e712bba32e92cdb"
+    },
+    {
+      "name": "handle-bridge.min.js",
+      "bytes": 8074,
+      "sha256": "3ca8bd7d4facd87c3fd10b25de8bbc2e0cff04d65fa5f16eb6fb4ef5fa63a8eb"
+    },
+    {
+      "name": "jwpsrv.js",
+      "bytes": 67262,
+      "sha256": "9a14bfe6376ee1c040735882769d97f12b8eda3620f214e70c4053166d64fc9a"
+    },
+    {
+      "name": "jw_player.js",
+      "bytes": 113496,
+      "sha256": "a98529651bd45d701d6cede0c212debc21dd1559d6e43430c8fffd3edc72b888"
+    },
+    {
+      "name": "live-sync.min.js",
+      "bytes": 2079,
+      "sha256": "910b0b1411880f3014c0f547db69b4b46f7a6c080d6f54dc20e210364996b81f"
+    },
+    {
+      "name": "main.js",
+      "bytes": 89428,
+      "sha256": "a003f5a312be355c66c98d77f190c2c870dae1d12697e7f4863b493f932e54a5"
+    },
+    {
+      "name": "mapper.js",
+      "bytes": 7823,
+      "sha256": "8dadf8b89f59f6d6775050e42da614f1d354336c92c8861b1a918d035b2d021f"
+    },
+    {
+      "name": "newclient.min.js",
+      "bytes": 29388,
+      "sha256": "9cfb8fe80dbe88802b951a3fc5548c93c63917798a5621c520fb60557a42537c"
+    },
+    {
+      "name": "player-fullscreen-parent.min.js",
+      "bytes": 4430,
+      "sha256": "562eecab05f442d667dd55469c31d53fff32519c2d751c7b978a72a7f84959f4"
+    },
+    {
+      "name": "script.js",
+      "bytes": 2841,
+      "sha256": "7e996b3a7fa059df8fc8f5fb3bc844281ae6fa0357d5cfb7f3dcd0194bab2c5c"
+    },
+    {
+      "name": "sub-megaplay-buzz",
+      "bytes": 3912,
+      "sha256": "cafbe1734c786c81a6d9b53d2c96079719813d99b136a4c030f48ed9dcd42a9d"
+    },
+    {
+      "name": "sw.js",
+      "bytes": 538,
+      "sha256": "d68a932e1e0922cc187f55140f97452564d37499b8d64870ef5f8f8401efc606"
+    },
+    {
+      "name": "watch-mana.min.js",
+      "bytes": 2650,
+      "sha256": "04b07d4b189c8dc0b67d01750ff0064560051008c27e181eb9ac305da38102bd"
+    }
+  ],
+  "har": {
+    "entries": 74,
+    "segmentRequests": 53,
+    "allSegments200": true,
+    "medianSegmentMs": 50.992999982554466,
+    "firstEntry": "2026-09-22T21:53:55.089Z",
+    "lastEntry": "2026-09-22T22:01:40.059Z",
+    "startupIncluded": false
+  },
+  "probeTimestamp": "2026-09-22T22:07:06.849Z",
+  "routes": [
+    "stream/getSourcesNew",
+    "stream/getSources"
+  ],
+  "samples": [
+    {
+      "slug": "liar-game-25-sub",
+      "mode": "cold-route-cache",
+      "fileId": "179839",
+      "directResolveMs": 112,
+      "appResolveMs": 297,
+      "legacyStatus": 404,
+      "legacyMs": 185,
+      "master": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "variants": [
+        {
+          "attributes": "BANDWIDTH=5500000,RESOLUTION=1920x1080,NAME=\"1080p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f2.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f3.m3u8"
+        }
+      ],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 358,
+      "toSegmentPrefixMs": 668,
+      "error": null
+    },
+    {
+      "slug": "liar-game-25-dub",
+      "mode": "warm-route-cache",
+      "fileId": null,
+      "directResolveMs": null,
+      "appResolveMs": null,
+      "legacyStatus": null,
+      "legacyMs": null,
+      "master": null,
+      "appSelectedUrl": null,
+      "variants": null,
+      "segmentStatus": null,
+      "tsSyncOffset": null,
+      "hasMediaEncryption": null,
+      "hasEncodedSegmentUrls": null,
+      "segmentCount": null,
+      "toSegmentPrefixMs": null,
+      "error": "no file ID"
+    },
+    {
+      "slug": "frieren-1-sub",
+      "mode": "warm-route-cache",
+      "fileId": "13461",
+      "directResolveMs": 72,
+      "appResolveMs": 266,
+      "legacyStatus": 200,
+      "legacyMs": 194,
+      "master": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b7d51fb7e838ee9b60dcdb34b953bc07/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b7d51fb7e838ee9b60dcdb34b953bc07/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 340,
+      "toSegmentPrefixMs": 575,
+      "error": null
+    },
+    {
+      "slug": "frieren-1-dub",
+      "mode": "warm-route-cache",
+      "fileId": "13454",
+      "directResolveMs": 124,
+      "appResolveMs": 283,
+      "legacyStatus": 200,
+      "legacyMs": 159,
+      "master": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b6ae2e4493d9f272eaef8ca4291d5d73/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b6ae2e4493d9f272eaef8ca4291d5d73/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 341,
+      "toSegmentPrefixMs": 623,
+      "error": null
+    },
+    {
+      "slug": "bleach-298-sub",
+      "mode": "warm-route-cache",
+      "fileId": "135825",
+      "directResolveMs": 119,
+      "appResolveMs": 263,
+      "legacyStatus": 200,
+      "legacyMs": 144,
+      "master": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/8403ade3daeb3b047a5835a0076f5b75/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/8403ade3daeb3b047a5835a0076f5b75/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 280,
+      "toSegmentPrefixMs": 509,
+      "error": null
+    },
+    {
+      "slug": "bleach-298-dub",
+      "mode": "warm-route-cache",
+      "fileId": "135999",
+      "directResolveMs": 249,
+      "appResolveMs": 375,
+      "legacyStatus": 200,
+      "legacyMs": 126,
+      "master": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/7929a0e863876c7d3b80051c70a1c0fe/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/7929a0e863876c7d3b80051c70a1c0fe/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 276,
+      "toSegmentPrefixMs": 676,
+      "error": null
+    },
+    {
+      "slug": "one-piece-1-sub",
+      "mode": "warm-route-cache",
+      "fileId": "36396",
+      "directResolveMs": 119,
+      "appResolveMs": 234,
+      "legacyStatus": 200,
+      "legacyMs": 114,
+      "master": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/61b87186ab260d05003427e16ccf5657/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/61b87186ab260d05003427e16ccf5657/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 321,
+      "toSegmentPrefixMs": 494,
+      "error": null
+    },
+    {
+      "slug": "one-piece-1-dub",
+      "mode": "warm-route-cache",
+      "fileId": "36382",
+      "directResolveMs": 201,
+      "appResolveMs": 368,
+      "legacyStatus": 200,
+      "legacyMs": 167,
+      "master": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/b23b2bb864c4f8876052acde11c6529c/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/b23b2bb864c4f8876052acde11c6529c/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 321,
+      "toSegmentPrefixMs": 679,
+      "error": null
+    },
+    {
+      "slug": "solo-leveling-1-sub",
+      "mode": "warm-route-cache",
+      "fileId": "10490",
+      "directResolveMs": 178,
+      "appResolveMs": 308,
+      "legacyStatus": 200,
+      "legacyMs": 130,
+      "master": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ddff1cdefe993d317922762a05f296fb/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ddff1cdefe993d317922762a05f296fb/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 318,
+      "toSegmentPrefixMs": 601,
+      "error": null
+    },
+    {
+      "slug": "solo-leveling-1-dub",
+      "mode": "warm-route-cache",
+      "fileId": "10482",
+      "directResolveMs": 108,
+      "appResolveMs": 240,
+      "legacyStatus": 200,
+      "legacyMs": 131,
+      "master": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ca8c2fc74649c9eee8774e41797556d2/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ca8c2fc74649c9eee8774e41797556d2/index-f1-v1-a1.m3u8",
+      "variants": [],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 319,
+      "toSegmentPrefixMs": 408,
+      "error": null
+    },
+    {
+      "slug": "liar-game-25-sub",
+      "mode": "repeat-1",
+      "fileId": "179839",
+      "directResolveMs": 69,
+      "appResolveMs": 154,
+      "legacyStatus": 404,
+      "legacyMs": 84,
+      "master": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "variants": [
+        {
+          "attributes": "BANDWIDTH=5500000,RESOLUTION=1920x1080,NAME=\"1080p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f2.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f3.m3u8"
+        }
+      ],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 358,
+      "toSegmentPrefixMs": 546,
+      "error": null
+    },
+    {
+      "slug": "liar-game-25-sub",
+      "mode": "repeat-2",
+      "fileId": "179839",
+      "directResolveMs": 109,
+      "appResolveMs": 191,
+      "legacyStatus": 404,
+      "legacyMs": 81,
+      "master": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "variants": [
+        {
+          "attributes": "BANDWIDTH=5500000,RESOLUTION=1920x1080,NAME=\"1080p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f2.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f3.m3u8"
+        }
+      ],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 358,
+      "toSegmentPrefixMs": 408,
+      "error": null
+    },
+    {
+      "slug": "liar-game-25-sub",
+      "mode": "repeat-3",
+      "fileId": "179839",
+      "directResolveMs": 51,
+      "appResolveMs": 149,
+      "legacyStatus": 404,
+      "legacyMs": 98,
+      "master": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "appSelectedUrl": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "variants": [
+        {
+          "attributes": "BANDWIDTH=5500000,RESOLUTION=1920x1080,NAME=\"1080p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f2.m3u8"
+        },
+        {
+          "attributes": "BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"",
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f3.m3u8"
+        }
+      ],
+      "segmentStatus": 200,
+      "tsSyncOffset": 0,
+      "hasMediaEncryption": false,
+      "hasEncodedSegmentUrls": false,
+      "segmentCount": 358,
+      "toSegmentPrefixMs": 411,
+      "error": null
+    }
+  ],
+  "miruroSourceSamples": [
+    {
+      "provider": "bee",
+      "status": 200,
+      "ms": 219,
+      "streams": [
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2",
+          "default": true
+        },
+        {
+          "url": "https://megaplay.buzz/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2"
+        },
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        },
+        {
+          "url": "https://megaplay.buzz/videojs/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        }
+      ]
+    },
+    {
+      "provider": "bee",
+      "status": 200,
+      "ms": 31,
+      "streams": [
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2",
+          "default": true
+        },
+        {
+          "url": "https://megaplay.buzz/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2"
+        },
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        },
+        {
+          "url": "https://megaplay.buzz/videojs/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        }
+      ]
+    },
+    {
+      "provider": "bee",
+      "status": 200,
+      "ms": 32,
+      "streams": [
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2",
+          "default": true
+        },
+        {
+          "url": "https://megaplay.buzz/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-2"
+        },
+        {
+          "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f1.m3u8",
+          "type": "hls",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        },
+        {
+          "url": "https://megaplay.buzz/videojs/stream/s-2/337825/sub",
+          "type": "embed",
+          "referer": "https://megaplay.buzz/",
+          "server": "Vidstream-1 beta"
+        }
+      ]
+    },
+    {
+      "provider": "hop",
+      "status": 200,
+      "ms": 62,
+      "streams": [
+        {
+          "url": "https://hls.krussdomi.com/manifest/6ab17b5d497b4123144ed297/master.m3u8",
+          "type": "hls",
+          "referer": "https://krussdomi.com/"
+        },
+        {
+          "url": "https://krussdomi.com/cat-player/player?id=6ab17b5d497b4123144ed297&source=vidstream&ln=ja-JP",
+          "type": "embed",
+          "referer": "https://krussdomi.com/"
+        }
+      ]
+    },
+    {
+      "provider": "ally",
+      "status": 444,
+      "ms": 63,
+      "streams": null
+    }
+  ],
+  "rawMasters": [
+    {
+      "sample": "liar-game-25-sub",
+      "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "status": 200,
+      "ms": 164,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5500000,RESOLUTION=1920x1080,NAME=\"1080p\"\nindex-f1.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"\nindex-f2.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"\nindex-f3.m3u8\n"
+    },
+    {
+      "sample": "frieren-1-sub",
+      "url": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b7d51fb7e838ee9b60dcdb34b953bc07/master.m3u8",
+      "status": 200,
+      "ms": 92,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1800112,RESOLUTION=1920x1080,FRAME-RATE=25.000,CODECS=\"avc1.640032,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=49071,RESOLUTION=640x360,CODECS=\"avc1.64001e\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    },
+    {
+      "sample": "frieren-1-dub",
+      "url": "https://fetch.nexabloom.top/anime/bb6d2babd7797d94d8f4a8600bc9b44e/b6ae2e4493d9f272eaef8ca4291d5d73/master.m3u8",
+      "status": 200,
+      "ms": 86,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1835388,RESOLUTION=1920x1080,FRAME-RATE=25.000,CODECS=\"avc1.640032,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=49650,RESOLUTION=640x360,CODECS=\"avc1.64001e\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    },
+    {
+      "sample": "bleach-298-sub",
+      "url": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/8403ade3daeb3b047a5835a0076f5b75/master.m3u8",
+      "status": 200,
+      "ms": 127,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1510975,RESOLUTION=1920x1080,FRAME-RATE=23.974,CODECS=\"avc1.640032,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=876540,RESOLUTION=1280x720,NAME=\"720p\"\nindex-new-f1.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=520199,RESOLUTION=854x480,NAME=\"480p\"\nindex-new-f2.m3u8\n"
+    },
+    {
+      "sample": "bleach-298-dub",
+      "url": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/7929a0e863876c7d3b80051c70a1c0fe/master.m3u8",
+      "status": 200,
+      "ms": 81,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=785280,RESOLUTION=1280x720,FRAME-RATE=23.974,CODECS=\"avc1.64001f,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=464090,RESOLUTION=854x480,NAME=\"480p\"\nindex-new-f1.m3u8\n"
+    },
+    {
+      "sample": "one-piece-1-sub",
+      "url": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/61b87186ab260d05003427e16ccf5657/master.m3u8",
+      "status": 200,
+      "ms": 90,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1201097,RESOLUTION=1440x1080,FRAME-RATE=23.974,CODECS=\"avc1.640028,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=40570,RESOLUTION=480x360,CODECS=\"avc1.640015\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    },
+    {
+      "sample": "one-piece-1-dub",
+      "url": "https://fetch.nexabloom.top/anime/f899139df5e1059396431415e770c6dd/b23b2bb864c4f8876052acde11c6529c/master.m3u8",
+      "status": 200,
+      "ms": 89,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1198761,RESOLUTION=1440x1080,FRAME-RATE=23.974,CODECS=\"avc1.640028,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=40570,RESOLUTION=480x360,CODECS=\"avc1.640015\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    },
+    {
+      "sample": "solo-leveling-1-sub",
+      "url": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ddff1cdefe993d317922762a05f296fb/master.m3u8",
+      "status": 200,
+      "ms": 84,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1648130,RESOLUTION=1920x1080,FRAME-RATE=25.000,CODECS=\"avc1.640032,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=35901,RESOLUTION=640x360,CODECS=\"avc1.64001e\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    },
+    {
+      "sample": "solo-leveling-1-dub",
+      "url": "https://fetch.nexabloom.top/anime/53adb96c287c3931b3bc41cebb003788/ca8c2fc74649c9eee8774e41797556d2/master.m3u8",
+      "status": 200,
+      "ms": 96,
+      "body": "#EXTM3U\n#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=1691160,RESOLUTION=1920x1080,FRAME-RATE=25.000,CODECS=\"avc1.640032,mp4a.40.2\"\nindex-f1-v1-a1.m3u8\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=35635,RESOLUTION=640x360,CODECS=\"avc1.64001e\",URI=\"iframes-f3-v1-a1.m3u8\"\n"
+    }
+  ],
+  "headerMatrix": [
+    {
+      "label": "master",
+      "mode": "no-referer",
+      "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "status": 403,
+      "ms": 127,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "master",
+      "mode": "megaplay-referer",
+      "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/master.m3u8",
+      "status": 206,
+      "ms": 125,
+      "type": "application/vnd.apple.mpegurl",
+      "cors": "*",
+      "contentRange": "bytes 0-253/254",
+      "firstBytes": "234558544d33550a234558542d582d53",
+      "ts": false
+    },
+    {
+      "label": "segment-jpg",
+      "mode": "no-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00000.jpg",
+      "status": 403,
+      "ms": 62,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "segment-jpg",
+      "mode": "megaplay-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00000.jpg",
+      "status": 200,
+      "ms": 75,
+      "type": "image/jpeg",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "474011100042f0250001c10000ff01ff",
+      "ts": true
+    },
+    {
+      "label": "segment-html",
+      "mode": "no-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00001.html",
+      "status": 403,
+      "ms": 26,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "segment-html",
+      "mode": "megaplay-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00001.html",
+      "status": 200,
+      "ms": 74,
+      "type": "text/html",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "474011110042f0250001c10000ff01ff",
+      "ts": true
+    },
+    {
+      "label": "segment-js",
+      "mode": "no-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00002.js",
+      "status": 403,
+      "ms": 23,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "segment-js",
+      "mode": "megaplay-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00002.js",
+      "status": 200,
+      "ms": 29,
+      "type": "application/javascript",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "474011120042f0250001c10000ff01ff",
+      "ts": true
+    },
+    {
+      "label": "segment-css",
+      "mode": "no-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00003.css",
+      "status": 403,
+      "ms": 20,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "segment-css",
+      "mode": "megaplay-referer",
+      "url": "https://tx-01.tyrionx.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/seg-f1-00003.css",
+      "status": 200,
+      "ms": 37,
+      "type": "text/css",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "474011130042f0250001c10000ff01ff",
+      "ts": true
+    },
+    {
+      "label": "subtitle",
+      "mode": "no-referer",
+      "url": "https://79qle.hiddenvertex.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/subtitles/track_0_CR_English_eng.vtt",
+      "status": 403,
+      "ms": 130,
+      "type": "text/html; charset=UTF-8",
+      "cors": "*",
+      "contentRange": null,
+      "firstBytes": "3c21444f43545950452068746d6c3e0a",
+      "ts": false
+    },
+    {
+      "label": "subtitle",
+      "mode": "megaplay-referer",
+      "url": "https://79qle.hiddenvertex.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/subtitles/track_0_CR_English_eng.vtt",
+      "status": 206,
+      "ms": 125,
+      "type": "application/octet-stream",
+      "cors": "*",
+      "contentRange": "bytes 0-8191/24027",
+      "firstBytes": "5745425654540a0a30313a33302e3233",
+      "ts": false
+    }
+  ],
+  "lowerVariants": [
+    {
+      "sample": "liar-game-25-sub",
+      "attributes": "BANDWIDTH=2800000,RESOLUTION=1280x720,NAME=\"720p\"",
+      "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f2.m3u8",
+      "playlistStatus": 200,
+      "segmentStatus": 200,
+      "ts": true,
+      "encoded": false,
+      "mediaEncryption": false
+    },
+    {
+      "sample": "liar-game-25-sub",
+      "attributes": "BANDWIDTH=800000,RESOLUTION=640x360,NAME=\"480p\"",
+      "url": "https://fetch.nexabloom.top/anime/05e374aeae418cba14cf28fc22ff2e18/d0c09c0ee397372299e636b04761dd32/index-f3.m3u8",
+      "playlistStatus": 200,
+      "segmentStatus": 200,
+      "ts": true,
+      "encoded": false,
+      "mediaEncryption": false
+    },
+    {
+      "sample": "bleach-298-sub",
+      "attributes": "BANDWIDTH=876540,RESOLUTION=1280x720,NAME=\"720p\"",
+      "url": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/8403ade3daeb3b047a5835a0076f5b75/index-new-f1.m3u8",
+      "playlistStatus": 200,
+      "segmentStatus": 200,
+      "ts": true,
+      "encoded": false,
+      "mediaEncryption": false
+    },
+    {
+      "sample": "bleach-298-sub",
+      "attributes": "BANDWIDTH=520199,RESOLUTION=854x480,NAME=\"480p\"",
+      "url": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/8403ade3daeb3b047a5835a0076f5b75/index-new-f2.m3u8",
+      "playlistStatus": 200,
+      "segmentStatus": 200,
+      "ts": true,
+      "encoded": false,
+      "mediaEncryption": false
+    },
+    {
+      "sample": "bleach-298-dub",
+      "attributes": "BANDWIDTH=464090,RESOLUTION=854x480,NAME=\"480p\"",
+      "url": "https://fetch.nexabloom.top/anime/d58072be2820e8682c0a27c0518e805e/7929a0e863876c7d3b80051c70a1c0fe/index-new-f1.m3u8",
+      "playlistStatus": 200,
+      "segmentStatus": 200,
+      "ts": true,
+      "encoded": false,
+      "mediaEncryption": false
+    }
+  ],
+  "codecProbe": {
+    "programs": [
+      {
+        "streams": [
+          {
+            "codec_name": "h264",
+            "codec_type": "video",
+            "width": 1920,
+            "height": 1080
+          },
+          {
+            "codec_name": "aac",
+            "codec_type": "audio"
+          }
+        ]
+      }
+    ],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1920,
+        "height": 1080
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio"
+      }
+    ]
+  },
+  "health": {
+    "fallback": "xdw5v.qeltrix.top",
+    "failed": [],
+    "updated_at": 1790114590,
+    "checked": 15
+  },
+  "siteServerResolve": [
+    {
+      "label": "Vidstream-2",
+      "status": 200,
+      "ms": 109,
+      "data": {
+        "status": 200,
+        "result": {
+          "url": "https://megaplay.buzz/stream/s-2/337825/sub",
+          "skip_data": {
+            "intro": [
+              0,
+              90
+            ],
+            "outro": [
+              1335,
+              1425
+            ]
+          }
+        }
+      }
+    },
+    {
+      "label": "Vidstream-1 beta",
+      "status": 200,
+      "ms": 69,
+      "data": {
+        "status": 200,
+        "result": {
+          "url": "https://megaplay.buzz/videojs/stream/s-2/337825/sub",
+          "skip_data": {
+            "intro": [
+              0,
+              90
+            ],
+            "outro": [
+              1335,
+              1425
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "mapper": {
+    "Kiwi": {
+      "sub": {
+        "download": {
+          "360p": "https://pahe.nekostream.site/GmSat",
+          "720p": "https://pahe.nekostream.site/clydK",
+          "1080p": "https://pahe.nekostream.site/XZJdr"
+        }
+      }
+    },
+    "status": {
+      "time": 1790112665,
+      "cache_expires_in": "1 hours 20 minutes 35 seconds",
+      "serves_from": "cache"
+    }
+  }
+}
