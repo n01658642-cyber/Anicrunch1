@@ -121,10 +121,10 @@ private data class PendingDownload(
 object BulkEpisodeDownloads {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Guards [queue], [inFlight] and [worker]; never held across a suspension point. */
+    /** Guards [queue], [inFlightIds] and [activeWorkers]; never held across a suspension point. */
     private val queue = ArrayDeque<PendingDownload>()
-    private var inFlight: PendingDownload? = null
-    private var worker: Job? = null
+    private val inFlightIds = mutableSetOf<String>()
+    private var worker: Job? = null // legacy unused; activeWorkers tracks parallel slots
 
     @Volatile private var appContext: Context? = null
 
@@ -400,7 +400,7 @@ object BulkEpisodeDownloads {
     /** Call with [queue] held. */
     private fun syncPendingIds() {
         _pendingIds.value = buildSet {
-            inFlight?.let { add(it.downloadId) }
+            addAll(inFlightIds)
             queue.forEach { add(it.downloadId) }
         }
     }
@@ -444,8 +444,8 @@ object BulkEpisodeDownloads {
         val parallel = SettingsStore.parallelDownloads.value
         while (true) {
             val next = synchronized(queue) {
-                val item = queue.removeFirstOrNull()
-                inFlight = item
+                val item = queue.removeFirstOrNull() ?: return@synchronized null
+                inFlightIds.add(item.downloadId)
                 syncPendingIds()
                 item
             } ?: return
@@ -457,7 +457,7 @@ object BulkEpisodeDownloads {
                 val dropped = synchronized(queue) {
                     val rest = queue.toList()
                     queue.clear()
-                    inFlight = null
+                    inFlightIds.clear()
                     syncPendingIds()
                     rest
                 }
@@ -505,15 +505,16 @@ object BulkEpisodeDownloads {
 
             record(next, ok)
 
+            synchronized(queue) {
+                inFlightIds.remove(next.downloadId)
+                syncPendingIds()
+            }
+
             // A short breather between provider hits; a tight loop over a scraper is the fastest
             // way to get everything queued behind it rate-limited.
             delay(if (parallel) BETWEEN_EPISODES_MS / 2 else BETWEEN_EPISODES_MS)
             if (parallel) {
                 // One episode per worker; ensureWorker will refill free slots.
-                synchronized(queue) {
-                    if (inFlight === next) inFlight = null
-                    syncPendingIds()
-                }
                 return
             }
         }
@@ -676,6 +677,7 @@ object BulkEpisodeDownloads {
                     episodeTitle = item.episode.title,
                     filler = item.episode.filler,
                     artworkUrl = item.episode.image?.takeIf { it.isNotBlank() } ?: item.artworkUrl,
+                    seriesArtworkUrl = item.artworkUrl,
                     provider = resolved.provider,
                     category = item.category.api,
                     // What the server actually answered with, which may not be what was asked for:

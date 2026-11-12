@@ -46,7 +46,9 @@ internal fun episodeArtworkImage(episodeImage: String?, fallbackImage: String?):
  * is the best picture available.
  */
 internal fun episodeArtworkFallback(episodes: List<EpisodeItem>, fallbackImage: String?): String? =
-    fallbackImage?.takeIf { episodes.size <= 1 || episodes.any { !it.image.isNullOrBlank() } }
+    // Multi-episode lists: never paint the series banner on every row. That reads as "one download
+    // thumb took over the list". Only a single-episode title (movie/OVA) uses the series art.
+    fallbackImage?.takeIf { episodes.size <= 1 }
 
 /**
  * Episode artwork, blurred when the viewer has asked for spoiler-free episode images.

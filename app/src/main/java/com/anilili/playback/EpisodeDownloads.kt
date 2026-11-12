@@ -100,6 +100,8 @@ data class EpisodeDownloadMetadata(
     val episodeTitle: String? = null,
     val filler: Boolean = false,
     val artworkUrl: String? = null,
+    /** Series/season poster; offline series card uses this so episode stills do not replace the banner. */
+    val seriesArtworkUrl: String? = null,
     val provider: String,
     val category: String,
     /**

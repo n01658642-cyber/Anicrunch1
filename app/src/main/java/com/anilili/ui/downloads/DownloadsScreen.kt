@@ -514,7 +514,9 @@ fun DownloadsScreen(
             items(visibleEpisodes, key = OfflineEpisode::id) { episode ->
                 EpisodeRow(
                     episode = episode,
-                    artworkUrl = openSeries.artworkUrl,
+                    artworkUrl = episode.metadata.artworkUrl
+                        ?: episode.metadata.seriesArtworkUrl
+                        ?: openSeries.artworkUrl,
                     historyEntry = historyByAnimeId[openSeries.anilistId],
                     exportStatus = exportStatuses[episode.id],
                     selectionActive = selecting,

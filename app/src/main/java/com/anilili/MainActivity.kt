@@ -1323,7 +1323,7 @@ private fun AppTvTopNavigation(
                     // again above a 14.sp label and made the bar look like a logo with a menu
                     // tucked under one corner. 22.dp is the height the phone header uses against
                     // the same label size.
-                    AnililiWordmark(modifier = Modifier.height(22.dp))
+                    AnililiWordmark()
                     tvBrandSuffixFor(BuildConfig.FLAVOR)?.let { suffix ->
                         Text(
                             text = suffix,
