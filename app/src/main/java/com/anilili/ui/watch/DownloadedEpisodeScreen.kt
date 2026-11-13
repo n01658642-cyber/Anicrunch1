@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.anilili.data.AppGraph
+import com.anilili.data.model.contentAdvisory
 import com.anilili.data.library.HistoryEntry
 import com.anilili.data.library.LibraryStore
 import com.anilili.data.library.resumeFor
@@ -75,6 +76,27 @@ import com.anilili.ui.adaptive.focusFill
 import com.anilili.ui.adaptive.rememberFocusFill
 import com.anilili.ui.nav.Routes
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil.compose.AsyncImage
+import com.anilili.data.model.Media
 
 /** Full player entry point for an episode already persisted in Media3's download cache. */
 @Composable
@@ -110,7 +132,7 @@ fun DownloadedEpisodeScreen(
     }
 
     // Offline: landscape by default; rotate button toggles portrait (Prime-style).
-    var forcePortraitPlayer by remember { mutableStateOf(false) }
+    var forcePortraitPlayer by remember { mutableStateOf(!device.isTv) } // phone: vertical Crunchyroll-style by default
     DisposableEffect(forcePortraitPlayer, device.isTv) {
         if (activity != null && !device.isTv) {
             activity.requestedOrientation = if (forcePortraitPlayer) {
@@ -179,6 +201,25 @@ fun DownloadedEpisodeScreen(
     // trace. The offline library already knows every episode on this device, so adjacency and
     // history both come from it.
     val offlineLibrary = remember(downloads, exported) { offlineEpisodes(downloads, exported) }
+    val seriesDescription by produceState<String?>(initialValue = null, playable?.metadata?.anilistId) {
+        val id = playable?.metadata?.anilistId ?: run { value = null; return@produceState }
+        value = runCatching { AppGraph.repository.animeInfo(id)?.description }
+            .getOrNull()
+            ?.replace(Regex("<[^>]+>"), " ")
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+    }
+    val seriesAdvisory by produceState<com.anilili.data.model.ContentAdvisory?>(
+        initialValue = null,
+        playable?.metadata?.anilistId,
+    ) {
+        val id = playable?.metadata?.anilistId ?: run { value = null; return@produceState }
+        value = runCatching {
+            AppGraph.repository.animeInfo(id)?.contentAdvisory()
+        }.getOrNull()
+    }
+
     val currentEpisode = offlineLibrary.firstOrNull { it.id == currentDownloadId }
     val playableSeriesEpisodes = remember(currentEpisode, offlineLibrary) {
         currentEpisode?.let { offlinePlayableEpisodesFor(it, offlineLibrary) }.orEmpty()
@@ -296,7 +337,7 @@ fun DownloadedEpisodeScreen(
     // full screen too, and the two would drift apart if each kept its own copy.
     PlayerSystemBarsEffect(
         activity = activity,
-        immersive = true,
+        immersive = !forcePortraitPlayer || device.isTv,
         controlsVisible = chromeVisible,
         isTv = device.isTv,
     )
@@ -372,13 +413,17 @@ fun DownloadedEpisodeScreen(
                     hasNextEpisode = nextEpisode != null,
                     hasPreviousEpisode = previousEpisode != null,
                     focusPlayerOnStart = true,
-                    isFullscreen = true,
+                    isFullscreen = !forcePortraitPlayer || device.isTv,
                     // A downloaded episode has no windowed layout to shrink back into — this screen
                     // is the picture and nothing else — so the controls' Exit leaves the player
                     // instead of resizing it. Left unwired the pill was still drawn and did
                     // nothing at all when pressed. TV is given none: its row would gain a
                     // Fullscreen button beside a remote that already has Back.
-                    onToggleFullscreen = if (device.isTv) null else leave,
+                    onToggleFullscreen = when {
+                        device.isTv -> null
+                        forcePortraitPlayer -> { forcePortraitPlayer = false }
+                        else -> { forcePortraitPlayer = true }
+                    },
                     startPositionMs = resumePositionMs,
                     notificationRoute = Routes.download(currentDownloadId),
                     episodes = drawerEpisodes.map { it.second },
@@ -513,18 +558,36 @@ fun DownloadedEpisodeScreen(
             }
         }
 
-        // Offline-only: Prime-style vertical/horizontal lock (does not touch online PlayerSurface).
-        if (chromeVisible && playable != null && !device.isTv) {
+        // Crunchyroll-style details + YouTube/Amazon vertical↔horizontal (offline only).
+        if (playable != null && !device.isTv && forcePortraitPlayer) {
+            OfflineCrunchyrollPanel(
+                metadata = playable.metadata,
+                description = seriesDescription,
+                advisory = seriesAdvisory,
+                nextEpisode = nextEpisode,
+                onPlayNext = { nextEpisode?.let(switchTo) },
+                onOpenAllEpisodes = {
+                    // Toggle player episode drawer via fullscreen false + select; open by focusing list:
+                    // Next best: switch to horizontal where in-player list exists, or leave a toast.
+                    forcePortraitPlayer = false
+                },
+                onExpandHorizontal = { forcePortraitPlayer = false },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.52f),
+            )
+        } else if (chromeVisible && playable != null && !device.isTv && !forcePortraitPlayer) {
             IconButton(
-                onClick = { forcePortraitPlayer = !forcePortraitPlayer },
+                onClick = { forcePortraitPlayer = true },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
                     .padding(8.dp),
             ) {
                 Icon(
-                    Icons.Default.ScreenRotation,
-                    contentDescription = if (forcePortraitPlayer) "Switch to horizontal" else "Switch to vertical",
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Vertical player",
                     tint = Color.White,
                 )
             }
@@ -617,6 +680,209 @@ private data class PlayableEpisode(
     val subtitles: List<SubtitleItem>,
     val metadata: com.anilili.playback.EpisodeDownloadMetadata,
 )
+
+
+@Composable
+private fun OfflineCrunchyrollPanel(
+    metadata: com.anilili.playback.EpisodeDownloadMetadata,
+    description: String?,
+    advisory: com.anilili.data.model.ContentAdvisory?,
+    nextEpisode: OfflineEpisode?,
+    onPlayNext: () -> Unit,
+    onOpenAllEpisodes: () -> Unit,
+    onExpandHorizontal: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val categoryLabel = when (metadata.category.lowercase()) {
+        "dub" -> "Dub English"
+        "sub", "ssub", "hsub" -> "Sub English"
+        else -> metadata.category.uppercase()
+    }
+    val episodeLabel = buildString {
+        append("E")
+        append(metadata.episodeNumber.trim().ifBlank { "?" })
+        metadata.episodeTitle?.takeIf { it.isNotBlank() }?.let {
+            append(" - ")
+            append(it)
+        }
+    }
+    Surface(
+        modifier = modifier,
+        color = Color(0xFF0E0E0E),
+    ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            // YouTube-style pull handle → expand to horizontal
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures { _, dragAmount ->
+                            if (dragAmount < -24f) onExpandHorizontal()
+                        }
+                    }
+                    .clickable(onClick = onExpandHorizontal),
+                contentAlignment = Alignment.Center,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(40.dp)
+                        .height(4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = Color.White.copy(alpha = 0.35f),
+                ) {}
+            }
+            Text(
+                text = metadata.seriesTitle,
+                color = Color(0xFFFF6A00),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = episodeLabel,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Downloaded",
+                    tint = Color(0xFF2EE6A6),
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Text(
+                text = "Downloaded · $categoryLabel",
+                color = Color.White.copy(alpha = 0.55f),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            if (!description.isNullOrBlank()) {
+                Text(
+                    text = description,
+                    color = Color.White.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp),
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "Content Advisory",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 18.dp),
+            )
+            val advisoryText = when {
+                advisory == null ->
+                    "Content labels are unavailable offline until series details have been loaded once online."
+                advisory.labels.isNotEmpty() -> advisory.labels.joinToString(", ")
+                advisory.isAdult -> "Adult content"
+                else -> "No prominent content labels on file for this title."
+            }
+            Text(
+                text = advisoryText,
+                color = Color.White.copy(alpha = 0.55f),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            if (nextEpisode != null) {
+                Text(
+                    text = "Next Downloaded Episode",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 18.dp, bottom = 10.dp),
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onPlayNext)
+                        .padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .width(140.dp)
+                            .aspectRatio(16f / 9f)
+                            .background(Color(0xFF1A1A1A), RoundedCornerShape(8.dp)),
+                    ) {
+                        AsyncImage(
+                            model = nextEpisode.metadata.artworkUrl
+                                ?: nextEpisode.metadata.seriesArtworkUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(36.dp),
+                        )
+                    }
+                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text(
+                            text = buildString {
+                                append(nextEpisode.metadata.episodeNumber)
+                                nextEpisode.metadata.episodeTitle?.takeIf { it.isNotBlank() }?.let {
+                                    append(". ")
+                                    append(it)
+                                }
+                            },
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = nextEpisode.metadata.category.uppercase(),
+                            color = Color.White.copy(alpha = 0.5f),
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF2EE6A6),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            Text(
+                text = "All Episodes",
+                color = Color(0xFFFF6A00),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .padding(top = 8.dp, bottom = 16.dp)
+                    .clickable(onClick = onOpenAllEpisodes)
+                    .align(Alignment.CenterHorizontally),
+            )
+        }
+    }
+}
 
 @Composable
 private fun DownloadMessage(title: String, message: String) {
