@@ -83,6 +83,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -419,10 +420,10 @@ fun DownloadedEpisodeScreen(
                     // instead of resizing it. Left unwired the pill was still drawn and did
                     // nothing at all when pressed. TV is given none: its row would gain a
                     // Fullscreen button beside a remote that already has Back.
-                    onToggleFullscreen = when {
-                        device.isTv -> null
-                        forcePortraitPlayer -> { forcePortraitPlayer = false }
-                        else -> { forcePortraitPlayer = true }
+                    onToggleFullscreen = if (device.isTv) {
+                        null
+                    } else {
+                        { forcePortraitPlayer = !forcePortraitPlayer }
                     },
                     startPositionMs = resumePositionMs,
                     notificationRoute = Routes.download(currentDownloadId),
