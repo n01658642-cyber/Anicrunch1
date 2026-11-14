@@ -449,7 +449,9 @@ enum class DefaultQuality(
     P1080("1080", "1080p", 1080),
     P720("720", "720p", 720),
     P480("480", "480p", 480),
-    P360("360", "360p · Data Saver", 360);
+    P360("360", "360p · Data Saver", 360),
+    P240("240", "240p", 240),
+    P144("144", "144p", 144);
 
     /** Best matching height from [heights], or null to leave adaptive selection alone. */
     fun pickHeight(heights: List<Int>): Int? = when (this) {
@@ -554,7 +556,9 @@ enum class DownloadQuality(
     P1080("1080", "1080p", 1080),
     P720("720", "720p", 720),
     P480("480", "480p", 480),
-    P360("360", "360p", 360);
+    P360("360", "360p", 360),
+    P240("240", "240p", 240),
+    P144("144", "144p", 144);
 
     companion object {
         fun fromStored(value: String?): DownloadQuality =
