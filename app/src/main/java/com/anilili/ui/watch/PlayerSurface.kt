@@ -2013,7 +2013,7 @@ fun PlayerSurface(
                 it.isFocusable = !device.isTv
                 it.isFocusableInTouchMode = !device.isTv
                 it.resizeMode = playerResizeMode(contentScale)
-                it.applyContentAspectRatio(contentAspectRatio)
+                it.applyContentAspectRatio(contentScale.forcedRatio ?: contentAspectRatio)
                 if (device.isTv) it.clearFocus()
                 val controlsVisible = if (device.isTv) tvControlsVisible else phoneControlsVisible
                 it.applyCaptionStyle(captionStyle, controlsVisible, device.isTv)
@@ -3166,7 +3166,10 @@ private fun MediaController.videoSelectionBuilder(): TrackSelectionParameters.Bu
         .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
 
 internal fun playerResizeMode(scale: PlayerContentScale): Int = when (scale) {
-    PlayerContentScale.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+    PlayerContentScale.FIT,
+    PlayerContentScale.RATIO_16_9,
+    PlayerContentScale.RATIO_4_3,
+    PlayerContentScale.RATIO_1_1 -> AspectRatioFrameLayout.RESIZE_MODE_FIT
     PlayerContentScale.CROP -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     PlayerContentScale.FILL -> AspectRatioFrameLayout.RESIZE_MODE_FILL
 }

@@ -154,8 +154,8 @@ class MiruroApp : Application(), ImageLoaderFactory {
         // After SettingsStore, whose switch decides whether the poll is scheduled at all.
         diagnosticsStep("AiringPollScheduler.sync") { AiringPollScheduler.sync(this) }
         // After SettingsStore, whose switch the check consults before it fetches anything.
-        diagnosticsStep("AnnouncementManager.init") { AnnouncementManager.init(this) }
-        diagnosticsStep("AnnouncementScheduler.schedule") { AnnouncementScheduler.schedule(this) }
+        diagnosticsStep("AnnouncementManager.init") { /* disabled: no upstream Anilili announcements */ }
+        diagnosticsStep("AnnouncementScheduler.schedule") { /* disabled */ }
         diagnosticsStep("UsagePing.init") { com.anilili.data.usage.UsagePing.init(this) }
         // The launcher icon follows the accent, but only switches once the app is out of sight:
         // some launchers redraw or drop the icon when its entry moves (AppIcon).

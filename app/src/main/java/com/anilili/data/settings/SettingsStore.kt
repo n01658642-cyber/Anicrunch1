@@ -473,10 +473,15 @@ enum class DefaultQuality(
 enum class PlayerContentScale(
     val storedValue: String,
     val label: String,
+    /** Forced frame ratio, or null to use the stream's native size (Fit). */
+    val forcedRatio: Float? = null,
 ) {
-    FIT("fit", "Fit"),
-    CROP("crop", "Crop"),
-    FILL("fill", "Fill");
+    FIT("fit", "Auto (native)", null),
+    RATIO_16_9("16_9", "16:9", 16f / 9f),
+    RATIO_4_3("4_3", "4:3", 4f / 3f),
+    RATIO_1_1("1_1", "1:1", 1f),
+    CROP("crop", "Crop (zoom)", null),
+    FILL("fill", "Stretch", null);
 
     companion object {
         fun fromStored(value: String?): PlayerContentScale =
@@ -773,7 +778,7 @@ object SettingsStore {
      * turned this off said so, and a channel that overrides its own opt-out is one the system
      * notification settings get used to silence instead, which loses the urgent messages too.
      */
-    private val _announcements = MutableStateFlow(true)
+    private val _announcements = MutableStateFlow(false)
     val announcements = _announcements.asStateFlow()
 
     private val _syncSavedToAniList = MutableStateFlow(true)

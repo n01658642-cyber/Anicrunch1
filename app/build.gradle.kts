@@ -82,7 +82,7 @@ android {
             // feature is being tested until you remember it is a different app. Test anything
             // that depends on real library data with a release build.
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            versionNameSuffix = ""
         }
         release {
             isMinifyEnabled = true
@@ -175,9 +175,9 @@ android {
             // universal mobile APK rather than a build meant for a different form factor.
             val formSuffix = if (flavorName == "tv") "_tv" else ""
             output.outputFileName = if (abi == null) {
-                "Anilili$buildTypeSuffix$formSuffix.apk"
+                "Anime$buildTypeSuffix$formSuffix.apk"
             } else {
-                "Anilili$buildTypeSuffix${formSuffix}_$abi.apk"
+                "Anime$buildTypeSuffix${formSuffix}_$abi.apk"
             }
         }
     }

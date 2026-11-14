@@ -373,11 +373,12 @@ fun DownloadedEpisodeScreen(
                 val seriesLogo by produceState<String?>(initialValue = null, metadata.anilistId) {
                     value = AppGraph.repository.seriesLogo(metadata.anilistId)
                 }
+                val splitLayout = forcePortraitPlayer && !device.isTv
+                val playerBlock: @Composable () -> Unit = {
                 CompositionLocalProvider(LocalPlayerSeriesLogo provides seriesLogo) { PlayerAccentScope {
                 PlayerSurface(
                     stream = playable.stream,
                     subtitles = playable.subtitles,
-                    // Only an episode with a whole number can be counted, the same rule as below.
                     externalPlaybackSession = metadata.episodeNumber.trim().toDoubleOrNull()?.let { number ->
                         { durationMs ->
                             val nextMeta = nextEpisode?.metadata
@@ -410,16 +411,21 @@ fun DownloadedEpisodeScreen(
                     },
                     onPreviousEpisode = { previousEpisode?.let(switchTo) },
                     onError = { failure, _, _ -> playbackError = failure },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = if (splitLayout) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures { _, dy ->
+                                    if (dy > 40f) forcePortraitPlayer = true
+                                }
+                            }
+                    },
                     hasNextEpisode = nextEpisode != null,
                     hasPreviousEpisode = previousEpisode != null,
                     focusPlayerOnStart = true,
-                    isFullscreen = !forcePortraitPlayer || device.isTv,
-                    // A downloaded episode has no windowed layout to shrink back into — this screen
-                    // is the picture and nothing else — so the controls' Exit leaves the player
-                    // instead of resizing it. Left unwired the pill was still drawn and did
-                    // nothing at all when pressed. TV is given none: its row would gain a
-                    // Fullscreen button beside a remote that already has Back.
+                    isFullscreen = !splitLayout || device.isTv,
                     onToggleFullscreen = if (device.isTv) {
                         null
                     } else {
@@ -533,8 +539,39 @@ fun DownloadedEpisodeScreen(
                     allowStallFailover = false,
                 )
                 } }
+                }
+
+                if (splitLayout) {
+                    Column(Modifier.fillMaxSize().background(Color.Black)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .pointerInput(Unit) {
+                                    detectVerticalDragGestures { _, dy ->
+                                        if (dy < -40f) forcePortraitPlayer = false
+                                    }
+                                },
+                        ) {
+                            playerBlock()
+                        }
+                        OfflineCrunchyrollPanel(
+                            metadata = metadata,
+                            description = seriesDescription,
+                            advisory = seriesAdvisory,
+                            nextEpisode = nextEpisode,
+                            onPlayNext = { nextEpisode?.let(switchTo) },
+                            onOpenAllEpisodes = { forcePortraitPlayer = false },
+                            onExpandHorizontal = { forcePortraitPlayer = false },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
+                    }
+                } else {
+                    playerBlock()
+                }
             }
         }
+
 
         val subtitleStatus = download?.offlineSubtitleStatusLabel
         if (chromeVisible && playable != null && subtitleStatus != null) {
@@ -559,26 +596,8 @@ fun DownloadedEpisodeScreen(
             }
         }
 
-        // Crunchyroll-style details + YouTube/Amazon vertical↔horizontal (offline only).
-        if (playable != null && !device.isTv && forcePortraitPlayer) {
-            OfflineCrunchyrollPanel(
-                metadata = playable.metadata,
-                description = seriesDescription,
-                advisory = seriesAdvisory,
-                nextEpisode = nextEpisode,
-                onPlayNext = { nextEpisode?.let(switchTo) },
-                onOpenAllEpisodes = {
-                    // Toggle player episode drawer via fullscreen false + select; open by focusing list:
-                    // Next best: switch to horizontal where in-player list exists, or leave a toast.
-                    forcePortraitPlayer = false
-                },
-                onExpandHorizontal = { forcePortraitPlayer = false },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.52f),
-            )
-        } else if (chromeVisible && playable != null && !device.isTv && !forcePortraitPlayer) {
+                // Collapse to Crunchyroll split is available from player fullscreen control / top button.
+        if (chromeVisible && playable != null && !device.isTv && !forcePortraitPlayer) {
             IconButton(
                 onClick = { forcePortraitPlayer = true },
                 modifier = Modifier
@@ -588,13 +607,13 @@ fun DownloadedEpisodeScreen(
             ) {
                 Icon(
                     Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Vertical player",
+                    contentDescription = "Vertical Crunchyroll layout",
                     tint = Color.White,
                 )
             }
         }
 
-        if (showsDownloadBackControl(hasPlayable = playable != null, hasPlaybackError = playbackError != null)) {
+if (showsDownloadBackControl(hasPlayable = playable != null, hasPlaybackError = playbackError != null)) {
             val controlFocus1 = rememberFocusFill()
             IconButton(
                 colors = controlFocus1.iconButtonColors(IconButtonDefaults.iconButtonColors()),
