@@ -32,13 +32,13 @@ object GitHubUpdateSource {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                AnililiError.UPDATE_NETWORK_FAILED.raise(
+                AnililiError.UPDATE_NO_MANIFEST.raise(
                     detail = "GitHub releases HTTP ${response.code}",
                 )
             }
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) {
-                AnililiError.UPDATE_NETWORK_FAILED.raise(detail = "Empty GitHub release body")
+                AnililiError.UPDATE_NO_MANIFEST.raise(detail = "Empty GitHub release body")
             }
             return parseRelease(json, body, preferArm64)
         }
@@ -62,7 +62,7 @@ object GitHubUpdateSource {
             Asset(n, url, size)
         }
         if (list.isEmpty()) {
-            AnililiError.UPDATE_NETWORK_FAILED.raise(detail = "No APK assets on latest release")
+            AnililiError.UPDATE_NO_MANIFEST.raise(detail = "No APK assets on latest release")
         }
 
         fun score(a: Asset): Int {

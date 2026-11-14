@@ -1042,3 +1042,26 @@ private fun OfflineAllEpisodesSheet(
         }
     }
 }
+
+@Composable
+private fun DownloadMessage(title: String, message: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            modifier = Modifier.padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                message,
+                color = Color.White.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+}
