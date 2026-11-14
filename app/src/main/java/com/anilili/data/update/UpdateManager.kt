@@ -324,13 +324,17 @@ object UpdateManager {
      * could only ever fail, and asking it first is what made every check pay for a doomed request.
      */
     private fun fetchLatest(): UpdateInfo =
-        runCatching { NostrUpdateSource.fetchManifestFromMirror(AppGraph.httpClient, json) }
-            .getOrElse { mirrorError ->
-                DiagnosticsLog.throwable("Manifest mirror failed; falling back to Nostr relays", mirrorError)
-                runCatching { NostrUpdateSource.fetchManifest(AppGraph.httpClient, json) }
-                    .getOrElse { nostrError ->
-                        DiagnosticsLog.throwable("Nostr relays also failed", nostrError)
-                        throw mirrorError
+        runCatching { GitHubUpdateSource.fetchManifest(AppGraph.httpClient, json) }
+            .getOrElse { githubError ->
+                DiagnosticsLog.throwable("GitHub releases failed; falling back to Nostr", githubError)
+                runCatching { NostrUpdateSource.fetchManifestFromMirror(AppGraph.httpClient, json) }
+                    .getOrElse { mirrorError ->
+                        DiagnosticsLog.throwable("Manifest mirror failed; falling back to Nostr relays", mirrorError)
+                        runCatching { NostrUpdateSource.fetchManifest(AppGraph.httpClient, json) }
+                            .getOrElse { nostrError ->
+                                DiagnosticsLog.throwable("Nostr relays also failed", nostrError)
+                                throw githubError
+                            }
                     }
             }
 

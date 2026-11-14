@@ -28,6 +28,11 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -555,16 +560,31 @@ fun DownloadedEpisodeScreen(
                         ) {
                             playerBlock()
                         }
+                        var showAllEpisodes by remember { mutableStateOf(false) }
                         OfflineCrunchyrollPanel(
                             metadata = metadata,
                             description = seriesDescription,
                             advisory = seriesAdvisory,
+                            seriesLogo = seriesLogo,
                             nextEpisode = nextEpisode,
+                            allEpisodes = playableSeriesEpisodes,
                             onPlayNext = { nextEpisode?.let(switchTo) },
-                            onOpenAllEpisodes = { forcePortraitPlayer = false },
+                            onOpenAllEpisodes = { showAllEpisodes = true },
+                            onSelectEpisode = switchTo,
                             onExpandHorizontal = { forcePortraitPlayer = false },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
+                        if (showAllEpisodes) {
+                            OfflineAllEpisodesSheet(
+                                episodes = playableSeriesEpisodes,
+                                currentId = currentDownloadId,
+                                onSelect = { ep ->
+                                    showAllEpisodes = false
+                                    switchTo(ep)
+                                },
+                                onDismiss = { showAllEpisodes = false },
+                            )
+                        }
                     }
                 } else {
                     playerBlock()
@@ -707,9 +727,12 @@ private fun OfflineCrunchyrollPanel(
     metadata: com.anilili.playback.EpisodeDownloadMetadata,
     description: String?,
     advisory: com.anilili.data.model.ContentAdvisory?,
+    seriesLogo: String?,
     nextEpisode: OfflineEpisode?,
+    allEpisodes: List<OfflineEpisode>,
     onPlayNext: () -> Unit,
     onOpenAllEpisodes: () -> Unit,
+    onSelectEpisode: (OfflineEpisode) -> Unit,
     onExpandHorizontal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -736,27 +759,45 @@ private fun OfflineCrunchyrollPanel(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            // YouTube-style pull handle → expand to horizontal
+            // Large, easy-to-hit drag handle → expand to fullscreen (YouTube / Prime style)
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp)
+                    .height(36.dp)
+                    .clickable(onClick = onExpandHorizontal)
                     .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            if (dragAmount < -24f) onExpandHorizontal()
-                        }
-                    }
-                    .clickable(onClick = onExpandHorizontal),
+                        detectVerticalDragGestures(
+                            onDragEnd = {},
+                            onVerticalDrag = { _, dragAmount ->
+                                // Up drag expands; also accept a short flick
+                                if (dragAmount < -12f) onExpandHorizontal()
+                            },
+                        )
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Surface(
                     modifier = Modifier
-                        .width(40.dp)
-                        .height(4.dp),
-                    shape = RoundedCornerShape(2.dp),
-                    color = Color.White.copy(alpha = 0.35f),
+                        .width(48.dp)
+                        .height(5.dp),
+                    shape = RoundedCornerShape(3.dp),
+                    color = Color.White.copy(alpha = 0.45f),
                 ) {}
             }
+
+            // Series logo above title (Crunchyroll-style)
+            if (!seriesLogo.isNullOrBlank()) {
+                AsyncImage(
+                    model = seriesLogo,
+                    contentDescription = metadata.seriesTitle,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(bottom = 8.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+
             Text(
                 text = metadata.seriesTitle,
                 color = Color(0xFFFF6A00),
@@ -799,7 +840,7 @@ private fun OfflineCrunchyrollPanel(
                     color = Color.White.copy(alpha = 0.78f),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 12.dp),
-                    maxLines = 5,
+                    maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -812,7 +853,7 @@ private fun OfflineCrunchyrollPanel(
             )
             val advisoryText = when {
                 advisory == null ->
-                    "Content labels are unavailable offline until series details have been loaded once online."
+                    "Content labels unavailable offline until series details load once online."
                 advisory.labels.isNotEmpty() -> advisory.labels.joinToString(", ")
                 advisory.isAdult -> "Adult content"
                 else -> "No prominent content labels on file for this title."
@@ -823,14 +864,19 @@ private fun OfflineCrunchyrollPanel(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp),
             )
+
+            // Always show Next section (Crunchyroll layout)
+            Text(
+                text = "Next Downloaded Episode",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 18.dp, bottom = 10.dp),
+            )
             if (nextEpisode != null) {
-                Text(
-                    text = "Next Downloaded Episode",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(top = 18.dp, bottom = 10.dp),
-                )
+                val nextMeta = nextEpisode.metadata
+                val thumb = nextMeta.artworkUrl?.takeIf { it.isNotBlank() }
+                    ?: nextMeta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -840,34 +886,39 @@ private fun OfflineCrunchyrollPanel(
                 ) {
                     Box(
                         Modifier
-                            .width(140.dp)
+                            .width(148.dp)
                             .aspectRatio(16f / 9f)
                             .background(Color(0xFF1A1A1A), RoundedCornerShape(8.dp)),
                     ) {
-                        AsyncImage(
-                            model = nextEpisode.metadata.artworkUrl
-                                ?: nextEpisode.metadata.seriesArtworkUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
+                        if (thumb != null) {
+                            AsyncImage(
+                                model = thumb,
+                                contentDescription = nextMeta.episodeTitle,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
                         Icon(
                             Icons.Default.PlayArrow,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier
                                 .align(Alignment.Center)
-                                .size(36.dp),
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                                .padding(4.dp),
                         )
                     }
-                    Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
                         Text(
                             text = buildString {
-                                append(nextEpisode.metadata.episodeNumber)
-                                nextEpisode.metadata.episodeTitle?.takeIf { it.isNotBlank() }?.let {
-                                    append(". ")
-                                    append(it)
-                                }
+                                append(nextMeta.episodeNumber.trim().ifBlank { "?" })
+                                append(". ")
+                                append(
+                                    nextMeta.episodeTitle?.takeIf { it.isNotBlank() }
+                                        ?: "Episode ${nextMeta.episodeNumber}",
+                                )
                             },
                             color = Color.White,
                             style = MaterialTheme.typography.bodyLarge,
@@ -875,54 +926,119 @@ private fun OfflineCrunchyrollPanel(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            text = nextEpisode.metadata.category.uppercase(),
-                            color = Color.White.copy(alpha = 0.5f),
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
                     }
                     Icon(
                         Icons.Default.Check,
-                        contentDescription = null,
+                        contentDescription = "Downloaded",
                         tint = Color(0xFF2EE6A6),
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            } else {
+                Text(
+                    text = "No other downloaded episode in this series yet.",
+                    color = Color.White.copy(alpha = 0.45f),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
             }
+
             Text(
                 text = "All Episodes",
                 color = Color(0xFFFF6A00),
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
-                    .padding(top = 8.dp, bottom = 16.dp)
+                    .padding(top = 12.dp, bottom = 24.dp)
                     .clickable(onClick = onOpenAllEpisodes)
-                    .align(Alignment.CenterHorizontally),
+                    .fillMaxWidth(),
             )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DownloadMessage(title: String, message: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun OfflineAllEpisodesSheet(
+    episodes: List<OfflineEpisode>,
+    currentId: String,
+    onSelect: (OfflineEpisode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF121212),
+    ) {
+        Text(
+            text = "Episodes",
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
         Column(
-            modifier = Modifier.padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            Text(
-                title,
-                color = Color.White,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                message,
-                color = Color.White.copy(alpha = 0.72f),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            episodes.forEach { ep ->
+                val meta = ep.metadata
+                val thumb = meta.artworkUrl?.takeIf { it.isNotBlank() }
+                    ?: meta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
+                val selected = ep.id == currentId
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (selected) Color(0xFF2A2A2A) else Color.Transparent,
+                            RoundedCornerShape(12.dp),
+                        )
+                        .clickable { onSelect(ep) }
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = meta.episodeNumber.trim().ifBlank { "?" },
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.width(28.dp),
+                    )
+                    Box(
+                        Modifier
+                            .width(72.dp)
+                            .aspectRatio(16f / 9f)
+                            .background(Color(0xFF1A1A1A), RoundedCornerShape(6.dp)),
+                    ) {
+                        if (thumb != null) {
+                            AsyncImage(
+                                model = thumb,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = meta.episodeTitle?.takeIf { it.isNotBlank() }
+                                ?: "Episode ${meta.episodeNumber}",
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (selected) "Now playing" else "Downloaded",
+                            color = Color.White.copy(alpha = 0.5f),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
