@@ -137,14 +137,21 @@ fun DownloadedEpisodeScreen(
         if (device.isTv) releaseImageMemoryForPlayback(context)
     }
 
-    // Offline: landscape by default; rotate button toggles portrait (Prime-style).
-    var forcePortraitPlayer by remember { mutableStateOf(!device.isTv) } // phone: vertical Crunchyroll-style by default
-    DisposableEffect(forcePortraitPlayer, device.isTv) {
+    // Phone offline layout:
+    //  SPLIT     = Crunchyroll (video top 16:9 + details) — default
+    //  EXPANDED  = YouTube-style portrait immersive (video fills height, no panel)
+    //  LANDSCAPE = true landscape fullscreen (rotate button only)
+    var offlineLayout by remember {
+        mutableStateOf(if (device.isTv) "landscape" else "split")
+    }
+    val forcePortraitPlayer = offlineLayout != "landscape"
+    val splitLayout = offlineLayout == "split" && !device.isTv
+    val expandedPortrait = offlineLayout == "expanded" && !device.isTv
+    DisposableEffect(offlineLayout, device.isTv) {
         if (activity != null && !device.isTv) {
-            activity.requestedOrientation = if (forcePortraitPlayer) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            activity.requestedOrientation = when (offlineLayout) {
+                "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             }
         }
         onDispose {
@@ -378,7 +385,7 @@ fun DownloadedEpisodeScreen(
                 val seriesLogo by produceState<String?>(initialValue = null, metadata.anilistId) {
                     value = AppGraph.repository.seriesLogo(metadata.anilistId)
                 }
-                val splitLayout = forcePortraitPlayer && !device.isTv
+                // splitLayout / expandedPortrait from offlineLayout above
                 val playerBlock: @Composable () -> Unit = {
                 CompositionLocalProvider(LocalPlayerSeriesLogo provides seriesLogo) { PlayerAccentScope {
                 PlayerSurface(
@@ -421,20 +428,31 @@ fun DownloadedEpisodeScreen(
                     } else {
                         Modifier
                             .fillMaxSize()
-                            .pointerInput(Unit) {
+                            .pointerInput(offlineLayout) {
                                 detectVerticalDragGestures { _, dy ->
-                                    if (dy > 40f) forcePortraitPlayer = true
+                                    // YouTube: pull down from expanded → back to split
+                                    if (dy > 40f && offlineLayout == "expanded") {
+                                        offlineLayout = "split"
+                                    } else if (dy > 40f && offlineLayout == "landscape") {
+                                        offlineLayout = "split"
+                                    }
                                 }
                             }
                     },
                     hasNextEpisode = nextEpisode != null,
                     hasPreviousEpisode = previousEpisode != null,
                     focusPlayerOnStart = true,
-                    isFullscreen = !splitLayout || device.isTv,
+                    isFullscreen = !splitLayout || device.isTv, // expanded counts as fullscreen chrome
                     onToggleFullscreen = if (device.isTv) {
                         null
                     } else {
-                        { forcePortraitPlayer = !forcePortraitPlayer }
+                        {
+                            offlineLayout = when (offlineLayout) {
+                                "landscape" -> "split"
+                                "expanded" -> "landscape"
+                                else -> "landscape"
+                            }
+                        }
                     },
                     startPositionMs = resumePositionMs,
                     notificationRoute = Routes.download(currentDownloadId),
@@ -546,6 +564,25 @@ fun DownloadedEpisodeScreen(
                 } }
                 }
 
+                val episodeStills by produceState<Map<String, String>>(
+                    initialValue = emptyMap(),
+                    metadata.anilistId,
+                ) {
+                    val id = metadata.anilistId
+                    value = runCatching {
+                        AppGraph.repository.episodeMetadata(id)
+                            .mapNotNull { ep ->
+                                val still = ep.still?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                                val key = if (ep.number % 1.0 == 0.0) {
+                                    ep.number.toInt().toString()
+                                } else {
+                                    ep.number.toString()
+                                }
+                                key to still
+                            }
+                            .toMap()
+                    }.getOrDefault(emptyMap())
+                }
                 if (splitLayout) {
                     Column(Modifier.fillMaxSize().background(Color.Black)) {
                         Box(
@@ -554,7 +591,7 @@ fun DownloadedEpisodeScreen(
                                 .aspectRatio(16f / 9f)
                                 .pointerInput(Unit) {
                                     detectVerticalDragGestures { _, dy ->
-                                        if (dy < -40f) forcePortraitPlayer = false
+                                        if (dy < -40f) offlineLayout = "expanded"
                                     }
                                 },
                         ) {
@@ -568,16 +605,18 @@ fun DownloadedEpisodeScreen(
                             seriesLogo = seriesLogo,
                             nextEpisode = nextEpisode,
                             allEpisodes = playableSeriesEpisodes,
+                            episodeStills = episodeStills,
                             onPlayNext = { nextEpisode?.let(switchTo) },
                             onOpenAllEpisodes = { showAllEpisodes = true },
                             onSelectEpisode = switchTo,
-                            onExpandHorizontal = { forcePortraitPlayer = false },
+                            onExpandHorizontal = { offlineLayout = "expanded" },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                         if (showAllEpisodes) {
                             OfflineAllEpisodesSheet(
                                 episodes = playableSeriesEpisodes,
                                 currentId = currentDownloadId,
+                                episodeStills = episodeStills,
                                 onSelect = { ep ->
                                     showAllEpisodes = false
                                     switchTo(ep)
@@ -619,7 +658,7 @@ fun DownloadedEpisodeScreen(
                 // Collapse to Crunchyroll split is available from player fullscreen control / top button.
         if (chromeVisible && playable != null && !device.isTv && !forcePortraitPlayer) {
             IconButton(
-                onClick = { forcePortraitPlayer = true },
+                onClick = { offlineLayout = "split" },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
@@ -730,6 +769,7 @@ private fun OfflineCrunchyrollPanel(
     seriesLogo: String?,
     nextEpisode: OfflineEpisode?,
     allEpisodes: List<OfflineEpisode>,
+    episodeStills: Map<String, String> = emptyMap(),
     onPlayNext: () -> Unit,
     onOpenAllEpisodes: () -> Unit,
     onSelectEpisode: (OfflineEpisode) -> Unit,
@@ -759,7 +799,7 @@ private fun OfflineCrunchyrollPanel(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
-            // Large, easy-to-hit drag handle → expand to fullscreen (YouTube / Prime style)
+            // Large drag handle → YouTube-style expanded portrait (video fills, panel hides)
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -875,7 +915,13 @@ private fun OfflineCrunchyrollPanel(
             )
             if (nextEpisode != null) {
                 val nextMeta = nextEpisode.metadata
-                val thumb = nextMeta.artworkUrl?.takeIf { it.isNotBlank() }
+                val epKey = nextMeta.episodeNumber.trim().let { raw ->
+                    raw.toDoubleOrNull()?.let { n ->
+                        if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()
+                    } ?: raw
+                }
+                val thumb = episodeStills[epKey]
+                    ?: nextMeta.artworkUrl?.takeIf { it.isNotBlank() }
                     ?: nextMeta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
                 Row(
                     Modifier
@@ -962,6 +1008,7 @@ private fun OfflineCrunchyrollPanel(
 private fun OfflineAllEpisodesSheet(
     episodes: List<OfflineEpisode>,
     currentId: String,
+    episodeStills: Map<String, String> = emptyMap(),
     onSelect: (OfflineEpisode) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -986,7 +1033,13 @@ private fun OfflineAllEpisodesSheet(
         ) {
             episodes.forEach { ep ->
                 val meta = ep.metadata
-                val thumb = meta.artworkUrl?.takeIf { it.isNotBlank() }
+                val epKey = meta.episodeNumber.trim().let { raw ->
+                    raw.toDoubleOrNull()?.let { n ->
+                        if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()
+                    } ?: raw
+                }
+                val thumb = episodeStills[epKey]
+                    ?: meta.artworkUrl?.takeIf { it.isNotBlank() }
                     ?: meta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
                 val selected = ep.id == currentId
                 Row(
