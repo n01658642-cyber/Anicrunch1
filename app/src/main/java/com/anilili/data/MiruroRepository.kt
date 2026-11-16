@@ -2109,13 +2109,13 @@ class MiruroRepository(
         // Jikan is free but blocking + rate-limited. Always run on IO with a tight budget so a
         // detail page open never does network/sleep on Main (NetworkOnMainThread / ANR / crash).
         val malId = info.idMal?.takeIf { it > 0 }
-        val fromJikan = if (malId != null) {
+        val fromJikan: List<EpisodeMetadata> = if (malId != null) {
             runCatching {
                 kotlinx.coroutines.withTimeoutOrNull(4_000L) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         jikan.episodeVideoStills(malId)
                     }
-                }.orEmpty()
+                } ?: emptyList()
             }
                 .onFailure {
                     it.rethrowIfCancellation()
