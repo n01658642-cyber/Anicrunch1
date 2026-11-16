@@ -70,6 +70,7 @@ import com.anilili.playback.EpisodeDownloads
 import com.anilili.playback.EpisodeExport
 import com.anilili.playback.ExternalPlaybackSession
 import com.anilili.playback.OfflineEpisode
+import com.anilili.playback.OfflineVideoThumbnail
 import com.anilili.playback.PlaybackService
 import com.anilili.playback.SleepTimer
 import com.anilili.playback.exportedSubtitleMimeType
@@ -382,6 +383,10 @@ fun DownloadedEpisodeScreen(
                 val metadata = playable.metadata
                 // The series' logo for the player's title and pause billing, as on the watch page.
                 // Offline it simply fails, and the player sets the title in type.
+                LaunchedEffect(currentDownloadId, playable?.stream?.url) {
+                    val url = playable?.stream?.url ?: return@LaunchedEffect
+                    OfflineVideoThumbnail.ensure(context, currentDownloadId, url)
+                }
                 val seriesLogo by produceState<String?>(initialValue = null, metadata.anilistId) {
                     value = AppGraph.repository.seriesLogo(metadata.anilistId)
                 }
@@ -920,8 +925,17 @@ private fun OfflineCrunchyrollPanel(
                         if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()
                     } ?: raw
                 }
+                val context = LocalContext.current
+                val frameThumb by produceState<String?>(initialValue = null, nextEpisode.id) {
+                    value = OfflineVideoThumbnail.ensure(
+                        context,
+                        nextEpisode.id,
+                        nextEpisode.download?.uri ?: nextEpisode.exported?.uri,
+                    )
+                }
                 val thumb = episodeStills[epKey]
                     ?: nextMeta.artworkUrl?.takeIf { it.isNotBlank() }
+                    ?: frameThumb
                     ?: nextMeta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
                 Row(
                     Modifier
@@ -1038,8 +1052,17 @@ private fun OfflineAllEpisodesSheet(
                         if (n % 1.0 == 0.0) n.toInt().toString() else n.toString()
                     } ?: raw
                 }
+                val context = LocalContext.current
+                val frameThumb by produceState<String?>(initialValue = null, ep.id) {
+                    value = OfflineVideoThumbnail.ensure(
+                        context,
+                        ep.id,
+                        ep.download?.uri ?: ep.exported?.uri,
+                    )
+                }
                 val thumb = episodeStills[epKey]
                     ?: meta.artworkUrl?.takeIf { it.isNotBlank() }
+                    ?: frameThumb
                     ?: meta.seriesArtworkUrl?.takeIf { it.isNotBlank() }
                 val selected = ep.id == currentId
                 Row(

@@ -923,6 +923,20 @@ object EpisodeDownloads {
             } else if (activeDownloadId == download.request.id) {
                 activeDownloadId = null
             }
+            // Pull a still from the finished file so offline rows have a real episode picture
+            // even when catalogue stills never loaded.
+            if (download.state == Download.STATE_COMPLETED) {
+                val id = download.request.id
+                val uri = download.request.uri?.toString()
+                scope.launch {
+                    val path = OfflineVideoThumbnail.ensure(appContext, id, uri) ?: return@launch
+                    val meta = metadataById[id] ?: return@launch
+                    if (meta.artworkUrl.isNullOrBlank() || meta.artworkUrl == meta.seriesArtworkUrl) {
+                        metadataById[id] = meta.copy(artworkUrl = "file://$path")
+                        refreshDownloads()
+                    }
+                }
+            }
             finalException?.let {
                 DiagnosticsLog.throwable("Episode download failed id=${download.request.id}", it)
             }

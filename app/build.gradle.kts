@@ -17,8 +17,8 @@ val diagnosticBuildSha = providers.environmentVariable("GITHUB_SHA").orNull
             isIgnoreExitValue = true
         }.standardOutput.asText.get().trim()
     }.getOrDefault("unknown").ifBlank { "unknown" }
-val appVersionCode = 101
-val appVersionName = "0.1.89"
+val appVersionCode = 102
+val appVersionName = "0.1.90"
 val openSubtitlesApiKey = providers.gradleProperty("openSubtitlesApiKey").orNull
     ?: providers.environmentVariable("OPEN_SUBTITLES_API_KEY").orNull
     ?: ""
