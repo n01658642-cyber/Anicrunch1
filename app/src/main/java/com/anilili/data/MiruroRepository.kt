@@ -2106,11 +2106,17 @@ class MiruroRepository(
         if (withAniList.isNotEmpty() && withAniList.none { it.still.isNullOrBlank() }) {
             return withAniList
         }
-        // Free Jikan video thumbs (no API key) when Konoha/TMDB left gaps — common for long
-        // running titles whose episodes.json is missing from the media-index tree.
+        // Jikan is free but blocking + rate-limited. Always run on IO with a tight budget so a
+        // detail page open never does network/sleep on Main (NetworkOnMainThread / ANR / crash).
         val malId = info.idMal?.takeIf { it > 0 }
         val fromJikan = if (malId != null) {
-            runCatching { jikan.episodeVideoStills(malId) }
+            runCatching {
+                kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        jikan.episodeVideoStills(malId)
+                    }
+                }.orEmpty()
+            }
                 .onFailure {
                     it.rethrowIfCancellation()
                     DiagnosticsLog.throwable("Jikan episode stills failed malId=$malId", it)

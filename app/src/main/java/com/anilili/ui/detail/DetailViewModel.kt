@@ -504,7 +504,7 @@ class DetailViewModel : ViewModel() {
         launchAiringWatch(seasonId)
         viewModelScope.launch {
             val metadataRequest = async {
-                runCatching { repo.episodeMetadata(seasonId) }
+                runCatching { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { repo.episodeMetadata(seasonId) } }
                     .onFailure(Throwable::rethrowIfCancellation)
                     .getOrDefault(emptyList())
             }
@@ -783,11 +783,19 @@ internal fun mergeEpisodeMetadata(
     animeId: Int,
 ): List<EpisodeItem> {
     if (meta.isEmpty()) return base
-    val byNumber = meta.associateBy { it.number }
+    // Index by exact number and by whole-number form so 1 and 1.0 both find the still.
+    val byNumber = buildMap<Double, com.anilili.data.model.EpisodeMetadata> {
+        meta.forEach { ep ->
+            put(ep.number, ep)
+            if (ep.number % 1.0 == 0.0) put(ep.number.toInt().toDouble(), ep)
+        }
+    }
     if (base.isNotEmpty()) {
         val numberByTitle = catalogueNumberByTitle(meta)
         return base.map { episode ->
-            val extra = byNumber[episode.number] ?: return@map episode
+            val extra = byNumber[episode.number]
+                ?: episode.number.let { n -> if (n % 1.0 == 0.0) byNumber[n.toInt().toDouble()] else null }
+                ?: return@map episode
             episode.copy(
                 // A provider that filled the title with "Episode 5" counts as having none, or its
                 // placeholder would outrank the real title this overlay exists to supply. A

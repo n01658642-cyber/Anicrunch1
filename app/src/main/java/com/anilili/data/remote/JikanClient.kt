@@ -105,7 +105,7 @@ class JikanClient(
     private companion object {
         // 100 episodes per page; 15 pages covers the longest running series that matter.
         const val MAX_PAGES = 15
-        const val MAX_VIDEO_PAGES = 25
+        const val MAX_VIDEO_PAGES = 3
         const val PAGE_SPACING_MS = 400L
     }
 }

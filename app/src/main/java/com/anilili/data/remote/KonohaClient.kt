@@ -1,5 +1,7 @@
 package com.anilili.data.remote
 
+import com.anilili.diagnostics.DiagnosticsLog
+
 import android.content.Context
 import com.anilili.data.cache.AppCache
 import com.anilili.data.MetadataOverrides
@@ -435,7 +437,6 @@ class KonohaClient(
                 "$DATA_BASE_RAW/$relative",
                 "$DATA_BASE/$relative",
             )
-            var lastError: Exception? = null
             for (url in urls) {
                 try {
                     val request = Request.Builder()
@@ -444,19 +445,26 @@ class KonohaClient(
                         .build()
                     client.newCall(request).execute().use { response ->
                         when {
-                            response.code == 404 -> return@getOrFetch emptyList()
+                            response.code == 404 -> { /* try next host or empty */ }
                             !response.isSuccessful -> error("Konoha HTTP ${response.code} for $url")
-                            else -> return@getOrFetch json.decodeFromString(
-                                ListSerializer(KonohaEpisode.serializer()),
-                                response.body?.string().orEmpty(),
-                            )
+                            else -> {
+                                val body = response.body?.string().orEmpty()
+                                if (body.isBlank() || body.first() != '[') {
+                                    error("Konoha non-JSON body for $url")
+                                }
+                                return@getOrFetch json.decodeFromString(
+                                    ListSerializer(KonohaEpisode.serializer()),
+                                    body,
+                                )
+                            }
                         }
                     }
                 } catch (e: Exception) {
-                    lastError = e
+                    DiagnosticsLog.throwable("Konoha episodes try failed url=$url", e)
                 }
             }
-            throw lastError ?: error("Konoha episodes failed")
+            // Missing tree entry (e.g. One Piece) is normal — callers overlay what they can.
+            emptyList()
         }
     }
 
