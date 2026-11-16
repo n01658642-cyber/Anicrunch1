@@ -424,7 +424,7 @@ class KonohaClient(
 
     suspend fun episodes(anilistId: Int): List<KonohaEpisode> = withContext(Dispatchers.IO) {
         cache.getOrFetch(
-            key = "konohaeps:v2:$anilistId",
+            key = "konohaeps:v3:$anilistId",
             serializer = ListSerializer(KonohaEpisode.serializer()),
             ttlMs = EPISODES_TTL_MS,
         ) {
@@ -432,8 +432,8 @@ class KonohaClient(
             val relative = "anime/$shard/$anilistId/episodes.json"
             // jsDelivr can refuse large trees; raw GitHub is the durable fallback used by Anilili.
             val urls = listOf(
-                "$DATA_BASE/$relative",
                 "$DATA_BASE_RAW/$relative",
+                "$DATA_BASE/$relative",
             )
             var lastError: Exception? = null
             for (url in urls) {
