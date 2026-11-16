@@ -2102,7 +2102,29 @@ class MiruroRepository(
                     "season=${info.episodes} (not this season's numbering)",
             )
         }
-        return mergeEpisodeMetadataSources(merged, fromAniList)
+        val withAniList = mergeEpisodeMetadataSources(merged, fromAniList)
+        if (withAniList.isNotEmpty() && withAniList.none { it.still.isNullOrBlank() }) {
+            return withAniList
+        }
+        // Free Jikan video thumbs (no API key) when Konoha/TMDB left gaps — common for long
+        // running titles whose episodes.json is missing from the media-index tree.
+        val malId = info.idMal?.takeIf { it > 0 }
+        val fromJikan = if (malId != null) {
+            runCatching { jikan.episodeVideoStills(malId) }
+                .onFailure {
+                    it.rethrowIfCancellation()
+                    DiagnosticsLog.throwable("Jikan episode stills failed malId=$malId", it)
+                }
+                .getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
+        if (fromJikan.isNotEmpty()) {
+            DiagnosticsLog.event(
+                "Episode metadata filled from Jikan id=$anilistId mal=$malId stills=${fromJikan.size}",
+            )
+        }
+        return mergeEpisodeMetadataSources(withAniList, fromJikan)
     }
 
     /**
