@@ -714,7 +714,7 @@ class KonohaClient(
          * to be purged alongside this one — see the publish step in `konoha-dataset/refresh.yml`.
          */
         const val DATA_BASE =
-            "https://cdn.jsdelivr.net/gh/DATA_OWNER/media-index@main/data"
+            "https://cdn.jsdelivr.net/gh/sanilili/media-index@main/data"
 
         const val TTL_HIT_MS = 30L * 24 * 60 * 60 * 1000 // 30 days
         /** Airing shows gain an episode weekly; six hours keeps lists fresh without re-fetching. */
