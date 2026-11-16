@@ -424,26 +424,39 @@ class KonohaClient(
 
     suspend fun episodes(anilistId: Int): List<KonohaEpisode> = withContext(Dispatchers.IO) {
         cache.getOrFetch(
-            key = "konohaeps:v1:$anilistId",
+            key = "konohaeps:v2:$anilistId",
             serializer = ListSerializer(KonohaEpisode.serializer()),
             ttlMs = EPISODES_TTL_MS,
         ) {
             val shard = anilistId / 1000
-            val url = "$DATA_BASE/anime/$shard/$anilistId/episodes.json"
-            val request = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .build()
-            client.newCall(request).execute().use { response ->
-                when {
-                    response.code == 404 -> emptyList()
-                    !response.isSuccessful -> error("Konoha HTTP ${response.code}")
-                    else -> json.decodeFromString(
-                        ListSerializer(KonohaEpisode.serializer()),
-                        response.body?.string().orEmpty(),
-                    )
+            val relative = "anime/$shard/$anilistId/episodes.json"
+            // jsDelivr can refuse large trees; raw GitHub is the durable fallback used by Anilili.
+            val urls = listOf(
+                "$DATA_BASE/$relative",
+                "$DATA_BASE_RAW/$relative",
+            )
+            var lastError: Exception? = null
+            for (url in urls) {
+                try {
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("Accept", "application/json")
+                        .build()
+                    client.newCall(request).execute().use { response ->
+                        when {
+                            response.code == 404 -> return@getOrFetch emptyList()
+                            !response.isSuccessful -> error("Konoha HTTP ${response.code} for $url")
+                            else -> return@getOrFetch json.decodeFromString(
+                                ListSerializer(KonohaEpisode.serializer()),
+                                response.body?.string().orEmpty(),
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    lastError = e
                 }
             }
+            throw lastError ?: error("Konoha episodes failed")
         }
     }
 
@@ -715,6 +728,8 @@ class KonohaClient(
          */
         const val DATA_BASE =
             "https://cdn.jsdelivr.net/gh/sanilili/media-index@main/data"
+        const val DATA_BASE_RAW =
+            "https://raw.githubusercontent.com/sanilili/media-index/main/data"
 
         const val TTL_HIT_MS = 30L * 24 * 60 * 60 * 1000 // 30 days
         /** Airing shows gain an episode weekly; six hours keeps lists fresh without re-fetching. */
