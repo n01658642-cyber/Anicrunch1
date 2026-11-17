@@ -7,13 +7,11 @@ import android.os.Process
 import android.os.StrictMode
 import android.os.SystemClock
 import coil.ImageLoader
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
-import coil.ImageLoader
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnitFactory
+import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import com.anilili.data.AppGraph
 import com.anilili.data.auth.AuthManager
 import com.anilili.data.auth.MalAuthManager
