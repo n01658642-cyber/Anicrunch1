@@ -16,6 +16,7 @@ import com.anilili.data.remote.MiruroEmbedResolver
 import com.anilili.data.remote.PipeClient
 import com.anilili.data.remote.OpenSubtitlesClient
 import com.anilili.data.remote.TmdbClient
+import com.anilili.data.remote.ImdbEpisodeClient
 import com.anilili.diagnostics.DiagnosticsHttpEventListener
 import com.anilili.data.device.isTelevision
 import com.anilili.data.remote.LegacyTrustAnchors.withLegacyTrustAnchors
@@ -138,6 +139,7 @@ object AppGraph {
             aniSkip = AniSkipClient(httpClient, json),
             mal = MalClient(httpClient, json),
             konoha = konoha,
+            imdbEpisodes = ImdbEpisodeClient(cache, json),
             cache = cache,
             localCatalog = LocalCatalog(context, json),
             aniZip = AniZipClient(httpClient, json, cache),

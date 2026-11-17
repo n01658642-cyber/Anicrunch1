@@ -54,6 +54,7 @@ import com.anilili.data.remote.KonohaClient
 import com.anilili.data.remote.KonohaEpisode
 import com.anilili.data.remote.toAiringSchedule
 import com.anilili.data.remote.TmdbClient
+import com.anilili.data.remote.ImdbEpisodeClient
 import com.anilili.data.remote.TvdbRef
 import com.anilili.data.remote.toMedia
 import com.anilili.data.remote.MalClient
@@ -766,6 +767,7 @@ class MiruroRepository(
     private val mal: MalClient,
     private val konoha: KonohaClient,
     private val tmdb: TmdbClient,
+    private val imdbEpisodes: ImdbEpisodeClient,
     private val cache: AppCache,
     private val localCatalog: LocalCatalog,
     private val aniZip: AniZipClient,
@@ -2046,7 +2048,7 @@ class MiruroRepository(
         if (anilistId < 0) return emptyList()
         val info = runCatching { animeInfo(anilistId) }.getOrNull()
         if (info?.isAdult == true) {
-            DiagnosticsLog.event("Episode metadata skipped for adult title id=$anilistId (TMDB has no hentai)")
+            DiagnosticsLog.event("Episode metadata skipped for adult title id=$anilistId")
             return emptyList()
         }
         val konohaRun = runCatching { konoha.episodes(anilistId) }
@@ -2066,16 +2068,7 @@ class MiruroRepository(
                 }
             }
         if (info == null) return konohaRun
-        // Konoha answers for the whole broadcast run a season belongs to, which for a series AniList
-        // splits is not the season that was asked for — see [alignMetadataToSeason].
         val aligned = alignMetadataToSeason(konohaRun, info)
-        if (aligned.size != konohaRun.size) {
-            DiagnosticsLog.event(
-                "Episode metadata cut to season id=$anilistId konoha=${konohaRun.size} season=${aligned.size}",
-            )
-        }
-        // Prefer the cut that still has pictures. A bad season align used to throw away every still
-        // and leave the page blank while the uncut Konoha run had perfect TMDB art.
         val alignedStills = aligned.count { !it.still.isNullOrBlank() }
         val rawStills = konohaRun.count { !it.still.isNullOrBlank() }
         val fromKonoha = when {
@@ -2085,69 +2078,22 @@ class MiruroRepository(
         }
         if (fromKonoha.isNotEmpty() && fromKonoha.none { it.still.isNullOrBlank() }) return fromKonoha
 
-        // --- AniList streaming episodes (titles + thumbnails) — preferred over TMDB ---
-        // Fresh info when the cache omitted streaming rows (common for airing titles).
-        var aniListMedia = info
-        if (aniListMedia.streamingEpisodes.isEmpty()) {
-            aniListMedia = runCatching { animeInfo(anilistId, force = true) }.getOrNull() ?: info
-        }
-        val aniListRows = streamingEpisodeMetadata(aniListMedia.streamingEpisodes)
-        val fromAniList = if (streamingRowsFitSeason(aniListMedia, aniListRows, fromKonoha)) {
-            aniListRows
-        } else if (fromKonoha.isEmpty() && aniListRows.isNotEmpty()) {
-            // Nothing else established — accept AniList rows rather than stay blank.
-            aniListRows
-        } else {
-            emptyList()
-        }
-        if (fromAniList.isNotEmpty()) {
+        // IMDb (via Cinemeta / Metahub) — episode stills for nearly every series. No TMDB/Jikan/AniList.
+        val fromImdb = runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                imdbEpisodes.episodeMetadata(info)
+            }
+        }.onFailure {
+            it.rethrowIfCancellation()
+            DiagnosticsLog.throwable("IMDb episode metadata failed id=$anilistId", it)
+        }.getOrDefault(emptyList())
+        if (fromImdb.isNotEmpty()) {
             DiagnosticsLog.event(
-                "Episode metadata from AniList id=$anilistId rows=${fromAniList.size} " +
-                    "stills=${fromAniList.count { !it.still.isNullOrBlank() }}",
+                "Episode metadata from IMDb id=$anilistId rows=${fromImdb.size} " +
+                    "stills=${fromImdb.count { !it.still.isNullOrBlank() }}",
             )
         }
-        var combined = mergeEpisodeMetadataSources(fromKonoha, fromAniList)
-        if (combined.isNotEmpty() && combined.none { it.still.isNullOrBlank() }) return combined
-
-        // --- Jikan (MAL) free stills/titles — no API key, works when AniList has no streaming rows ---
-        val malId = (aniListMedia.idMal ?: info.idMal)?.takeIf { it > 0 }
-        val fromJikan: List<EpisodeMetadata> = if (malId != null) {
-            runCatching {
-                kotlinx.coroutines.withTimeoutOrNull(20_000L) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        jikan.episodeTitlesAndStills(malId)
-                    }
-                } ?: emptyList()
-            }
-                .onFailure {
-                    it.rethrowIfCancellation()
-                    DiagnosticsLog.throwable("Jikan episode meta failed malId=$malId", it)
-                }
-                .getOrDefault(emptyList())
-        } else {
-            emptyList()
-        }
-        if (fromJikan.isNotEmpty()) {
-            DiagnosticsLog.event(
-                "Episode metadata from Jikan id=$anilistId mal=$malId rows=${fromJikan.size}",
-            )
-        }
-        combined = mergeEpisodeMetadataSources(combined, fromJikan)
-        if (combined.isNotEmpty() && combined.none { it.still.isNullOrBlank() }) return combined
-
-        // TMDB only as last resort (often blocked / unusable on some networks).
-        if (tmdb.isConfigured && (combined.isEmpty() || combined.any { it.still.isNullOrBlank() })) {
-            val fromTmdb = runCatching {
-                tmdb.episodeMetadata(info, konoha.tmdbRefFor(anilistId))
-            }.getOrDefault(emptyList()).ifEmpty {
-                runCatching { tmdb.rescueEpisodeStills(info) }.getOrDefault(emptyList())
-            }
-            if (fromTmdb.isNotEmpty()) {
-                DiagnosticsLog.event("Episode metadata TMDB last-resort id=$anilistId rows=${fromTmdb.size}")
-                combined = mergeEpisodeMetadataSources(combined, fromTmdb)
-            }
-        }
-        return combined
+        return mergeEpisodeMetadataSources(fromKonoha, fromImdb)
     }
 
     /**

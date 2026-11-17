@@ -284,7 +284,7 @@ object UpdateManager {
                             // The instruction is the detail rather than the line, because the line
                             // has to fit a row and this one only makes sense in the dialog: there is
                             // no button the app can offer once its own settings intent has failed.
-                            detail = "Allow \"install unknown apps\" for Anilili in Android's settings, " +
+                            detail = "Allow \"install unknown apps\" for Anime in Android's settings, " +
                                 "then try the update again.",
                             cause = error,
                             attributes = mapOf("version" to ready.update.version, "stage" to "permission_settings"),
@@ -412,7 +412,7 @@ object UpdateManager {
                 .setDataAndType(uri, APK_MIME_TYPE)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (policy.uriKind == UpdateInstallerUriKind.FILE_PROVIDER) {
-                intent.clipData = ClipData.newRawUri("Anilili update", uri)
+                intent.clipData = ClipData.newRawUri("Anime update", uri)
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             try {
@@ -613,8 +613,8 @@ internal fun preferredReleaseApkName(
     }
     return preferredAbi?.let { abi ->
         family.firstOrNull { it.contains(abi, ignoreCase = true) }
-    } ?: family.firstOrNull { it.equals("Anilili.apk", ignoreCase = true) }
-        ?: family.firstOrNull { it.equals("Anilili_tv.apk", ignoreCase = true) }
+    } ?: family.firstOrNull { it.equals("Anime.apk", ignoreCase = true) }
+        ?: family.firstOrNull { it.equals("Anime_tv.apk", ignoreCase = true) }
         ?: family.firstOrNull { it.contains("universal", ignoreCase = true) }
         ?: family.first()
 }

@@ -17,8 +17,8 @@ val diagnosticBuildSha = providers.environmentVariable("GITHUB_SHA").orNull
             isIgnoreExitValue = true
         }.standardOutput.asText.get().trim()
     }.getOrDefault("unknown").ifBlank { "unknown" }
-val appVersionCode = 111
-val appVersionName = "0.1.99"
+val appVersionCode = 112
+val appVersionName = "0.2.0"
 val openSubtitlesApiKey = providers.gradleProperty("openSubtitlesApiKey").orNull
     ?: providers.environmentVariable("OPEN_SUBTITLES_API_KEY").orNull
     ?: ""
@@ -37,7 +37,7 @@ android {
     buildToolsVersion = "35.0.1"
 
     defaultConfig {
-        applicationId = "com.miruronative"
+        applicationId = "com.anicrunch.anime"
         // Fire OS 5 devices (including the 1st/2nd-gen Fire TV Sticks) report API 22.
         minSdk = 22
         targetSdk = 36
@@ -81,7 +81,7 @@ android {
             // install of this has no history and no watchlist, which reads as a bug in whatever
             // feature is being tested until you remember it is a different app. Test anything
             // that depends on real library data with a release build.
-            applicationIdSuffix = ".debug"
+            // applicationIdSuffix removed — was causing install conflicts with signed builds
             versionNameSuffix = ""
         }
         release {
