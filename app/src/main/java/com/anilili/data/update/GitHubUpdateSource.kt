@@ -96,9 +96,14 @@ object GitHubUpdateSource {
         // then treats them as 0.0.0 and claims the install is already newer.
         val version = extractSemver(name, notes, tag)
             ?: tag.removePrefix("v").ifBlank { name.ifBlank { tag } }
-        val build = Regex("""\b(\d{2,4})\b""").findAll("$name $tag")
-            .mapNotNull { it.groupValues[1].toIntOrNull() }
-            .lastOrNull()
+        // NEVER scrape "97" out of "0.1.97" — that was compared to versionCode 108 and
+        // blocked every update ("already newer" while 0.1.97 was published).
+        // Only accept an explicit versionCode=123 in the release body.
+        val build = Regex("""versionCode\s*[=:]\s*(\d+)""", RegexOption.IGNORE_CASE)
+            .find(notes)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
         DiagnosticsLog.event("GitHub update: tag=$tag version=$version build=$build asset=${chosen.name}")
         return UpdateManager.UpdateInfo(
             version = version,

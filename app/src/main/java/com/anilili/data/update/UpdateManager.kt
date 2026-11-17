@@ -543,13 +543,14 @@ internal fun updateOffer(
     installedVersion: String,
     installedBuild: Int,
 ): UpdateOffer {
-    if (remoteBuild != null && remoteBuild < installedBuild) return UpdateOffer.NONE
     val names = compareAppVersions(remoteVersion, installedVersion)
-    return when {
-        names > 0 -> UpdateOffer.PROMPT
-        names == 0 && remoteBuild != null && remoteBuild > installedBuild -> UpdateOffer.QUIET
-        else -> UpdateOffer.NONE
-    }
+    // A higher version *name* always wins (0.1.97 > 0.1.96), regardless of any botched build field.
+    if (names > 0) return UpdateOffer.PROMPT
+    if (names < 0) return UpdateOffer.NONE
+    // Same version name: only then compare versionCode-style build numbers.
+    if (remoteBuild != null && remoteBuild > installedBuild) return UpdateOffer.QUIET
+    if (remoteBuild != null && remoteBuild < installedBuild) return UpdateOffer.NONE
+    return UpdateOffer.NONE
 }
 
 /**
