@@ -61,7 +61,60 @@ class JikanClient(
      * Episode preview thumbnails from MAL via Jikan `/anime/{id}/videos/episodes`.
      * Free, no API key. Only episodes that have a video/preview entry get a still.
      */
-    fun episodeVideoStills(malId: Int): List<EpisodeMetadata> {
+
+    /**
+     * Episode titles from `/episodes` plus stills from `/videos/episodes` when present.
+     * Free, no API key — used when AniList has no streaming thumbnails.
+     */
+    fun episodeTitlesAndStills(malId: Int): List<EpisodeMetadata> {
+        val byNumber = linkedMapOf<Double, EpisodeMetadata>()
+        // Titles (and sometimes synopsis) — does not require video previews to exist.
+        var page = 1
+        while (page <= MAX_PAGES) {
+            if (page > 1) Thread.sleep(PAGE_SPACING_MS)
+            val request = Request.Builder()
+                .url("https://api.jikan.moe/v4/anime/$malId/episodes?page=$page")
+                .header("Accept", "application/json")
+                .build()
+            val root = try {
+                client.newCall(request).execute().use { response ->
+                    if (response.code == 404) return@use null
+                    if (!response.isSuccessful) error("Jikan episodes HTTP ${response.code}")
+                    json.parseToJsonElement(response.body?.string().orEmpty()).jsonObject
+                }
+            } catch (_: Exception) {
+                break
+            } ?: break
+            val episodes = root["data"]?.jsonArray ?: break
+            episodes.forEach { element ->
+                val episode = element.jsonObject
+                val malEp = episode["mal_id"]?.jsonPrimitive?.intOrNull ?: return@forEach
+                val title = episode["title"]?.jsonPrimitive?.contentOrNull
+                    ?: episode["title_japanese"]?.jsonPrimitive?.contentOrNull
+                byNumber[malEp.toDouble()] = EpisodeMetadata(
+                    number = malEp.toDouble(),
+                    title = title?.takeIf { it.isNotBlank() },
+                    still = byNumber[malEp.toDouble()]?.still,
+                )
+            }
+            val hasNext = root["pagination"]?.jsonObject
+                ?.get("has_next_page")?.jsonPrimitive?.booleanOrNull ?: false
+            if (!hasNext) break
+            page++
+        }
+        // Overlay video stills where MAL published a preview frame.
+        runCatching { episodeVideoStills(malId) }.getOrDefault(emptyList()).forEach { stillRow ->
+            val existing = byNumber[stillRow.number]
+            byNumber[stillRow.number] = EpisodeMetadata(
+                number = stillRow.number,
+                title = existing?.title ?: stillRow.title,
+                still = stillRow.still ?: existing?.still,
+            )
+        }
+        return byNumber.values.sortedBy { it.number }
+    }
+
+        fun episodeVideoStills(malId: Int): List<EpisodeMetadata> {
         val out = mutableListOf<EpisodeMetadata>()
         var page = 1
         while (page <= MAX_VIDEO_PAGES) {

@@ -2084,52 +2084,44 @@ class MiruroRepository(
             else -> aligned.ifEmpty { konohaRun }
         }
         if (fromKonoha.isNotEmpty() && fromKonoha.none { it.still.isNullOrBlank() }) return fromKonoha
-        // Always ask TMDB when any row is still blank — same path that makes Attack on Titan work.
-        val fromTmdb = if (tmdb.isConfigured) {
-            tmdb.episodeMetadata(info, konoha.tmdbRefFor(anilistId))
+
+        // --- AniList streaming episodes (titles + thumbnails) — preferred over TMDB ---
+        // Fresh info when the cache omitted streaming rows (common for airing titles).
+        var aniListMedia = info
+        if (aniListMedia.streamingEpisodes.isEmpty()) {
+            aniListMedia = runCatching { animeInfo(anilistId, force = true) }.getOrNull() ?: info
+        }
+        val aniListRows = streamingEpisodeMetadata(aniListMedia.streamingEpisodes)
+        val fromAniList = if (streamingRowsFitSeason(aniListMedia, aniListRows, fromKonoha)) {
+            aniListRows
+        } else if (fromKonoha.isEmpty() && aniListRows.isNotEmpty()) {
+            // Nothing else established — accept AniList rows rather than stay blank.
+            aniListRows
         } else {
             emptyList()
         }
-        if (fromTmdb.isNotEmpty()) {
-            DiagnosticsLog.event(
-                "Episode metadata filled from TMDB id=$anilistId konoha=${fromKonoha.size} tmdb=${fromTmdb.size}",
-            )
-        }
-        val merged = mergeEpisodeMetadataSources(fromKonoha, fromTmdb)
-        if (merged.isNotEmpty() && merged.none { it.still.isNullOrBlank() }) return merged
-        val aniListRows = streamingEpisodeMetadata(info.streamingEpisodes)
-        // The licensor's listing is numbered for whatever run it streams, which for a series AniList
-        // splits is not this season — see [streamingRowsFitSeason].
-        val fromAniList = if (streamingRowsFitSeason(info, aniListRows, merged)) aniListRows else emptyList()
         if (fromAniList.isNotEmpty()) {
             DiagnosticsLog.event(
-                "Episode metadata filled from AniList id=$anilistId merged=${merged.size} anilist=${fromAniList.size}",
-            )
-        } else if (aniListRows.isNotEmpty()) {
-            DiagnosticsLog.event(
-                "Episode metadata from AniList refused id=$anilistId rows=${aniListRows.size} " +
-                    "numbered ${aniListRows.first().number}..${aniListRows.last().number} " +
-                    "season=${info.episodes} (not this season's numbering)",
+                "Episode metadata from AniList id=$anilistId rows=${fromAniList.size} " +
+                    "stills=${fromAniList.count { !it.still.isNullOrBlank() }}",
             )
         }
-        val withAniList = mergeEpisodeMetadataSources(merged, fromAniList)
-        if (withAniList.isNotEmpty() && withAniList.none { it.still.isNullOrBlank() }) {
-            return withAniList
-        }
-        // Jikan is free but blocking + rate-limited. Always run on IO with a tight budget so a
-        // detail page open never does network/sleep on Main (NetworkOnMainThread / ANR / crash).
-        val malId = info.idMal?.takeIf { it > 0 }
+        var combined = mergeEpisodeMetadataSources(fromKonoha, fromAniList)
+        if (combined.isNotEmpty() && combined.none { it.still.isNullOrBlank() }) return combined
+
+        // --- Jikan (MAL) free stills/titles — no API key, works when AniList has no streaming rows ---
+        val malId = (aniListMedia.idMal ?: info.idMal)?.takeIf { it > 0 }
         val fromJikan: List<EpisodeMetadata> = if (malId != null) {
             runCatching {
-                kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                kotlinx.coroutines.withTimeoutOrNull(20_000L) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        jikan.episodeVideoStills(malId)
+                        jikan.episodeTitlesAndStills(malId)
                     }
                 } ?: emptyList()
             }
                 .onFailure {
                     it.rethrowIfCancellation()
-                    DiagnosticsLog.throwable("Jikan episode stills failed malId=$malId", it)
+                    DiagnosticsLog.throwable("Jikan episode meta failed malId=$malId", it)
                 }
                 .getOrDefault(emptyList())
         } else {
@@ -2137,19 +2129,22 @@ class MiruroRepository(
         }
         if (fromJikan.isNotEmpty()) {
             DiagnosticsLog.event(
-                "Episode metadata filled from Jikan id=$anilistId mal=$malId stills=${fromJikan.size}",
+                "Episode metadata from Jikan id=$anilistId mal=$malId rows=${fromJikan.size}",
             )
         }
-        var combined = mergeEpisodeMetadataSources(withAniList, fromJikan)
-        // Airing / new titles often have no Konoha episodes.json. TMDB still has stills + names —
-        // same data that makes older shows like Vandread fill instantly. Rescue when any row is blank.
-        if (tmdb.isConfigured && (combined.isEmpty() || combined.any { it.still.isNullOrBlank() || it.title.isNullOrBlank() })) {
-            val rescued = tmdb.rescueEpisodeStills(info)
-            if (rescued.isNotEmpty()) {
-                DiagnosticsLog.event(
-                    "Episode metadata TMDB rescue id=$anilistId stills=${rescued.count { !it.still.isNullOrBlank() }}",
-                )
-                combined = mergeEpisodeMetadataSources(combined, rescued)
+        combined = mergeEpisodeMetadataSources(combined, fromJikan)
+        if (combined.isNotEmpty() && combined.none { it.still.isNullOrBlank() }) return combined
+
+        // TMDB only as last resort (often blocked / unusable on some networks).
+        if (tmdb.isConfigured && (combined.isEmpty() || combined.any { it.still.isNullOrBlank() })) {
+            val fromTmdb = runCatching {
+                tmdb.episodeMetadata(info, konoha.tmdbRefFor(anilistId))
+            }.getOrDefault(emptyList()).ifEmpty {
+                runCatching { tmdb.rescueEpisodeStills(info) }.getOrDefault(emptyList())
+            }
+            if (fromTmdb.isNotEmpty()) {
+                DiagnosticsLog.event("Episode metadata TMDB last-resort id=$anilistId rows=${fromTmdb.size}")
+                combined = mergeEpisodeMetadataSources(combined, fromTmdb)
             }
         }
         return combined

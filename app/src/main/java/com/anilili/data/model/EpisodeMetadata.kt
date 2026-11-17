@@ -213,10 +213,22 @@ internal fun streamingEpisodeNumber(title: String?): Int? =
  */
 internal fun streamingEpisodeMetadata(episodes: List<StreamingEpisode>): List<EpisodeMetadata> =
     episodes
-        .mapNotNull { episode ->
-            val number = streamingEpisodeNumber(episode.title) ?: return@mapNotNull null
-            val thumbnail = episode.thumbnail?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            EpisodeMetadata(number = number.toDouble(), still = thumbnail)
+        .mapIndexedNotNull { index, episode ->
+            val number = streamingEpisodeNumber(episode.title) ?: (index + 1)
+            val thumbnail = episode.thumbnail?.takeIf { it.isNotBlank() }
+            // Prefer a readable title without the leading "Episode N - " noise when present.
+            val rawTitle = episode.title?.trim()?.takeIf { it.isNotBlank() }
+            val cleaned = rawTitle
+                ?.replace(Regex("""^(?i)(?:episode|ep)\.?\s*\d+\s*[-:]\s*"""), "")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && !it.equals(rawTitle, ignoreCase = true) }
+                ?: rawTitle?.takeIf { streamingEpisodeNumber(it) == null }
+            if (thumbnail == null && cleaned == null) return@mapIndexedNotNull null
+            EpisodeMetadata(
+                number = number.toDouble(),
+                title = cleaned,
+                still = thumbnail,
+            )
         }
         .distinctBy { it.number }
         .sortedBy { it.number }
