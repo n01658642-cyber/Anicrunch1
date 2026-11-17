@@ -526,6 +526,10 @@ class DetailViewModel : ViewModel() {
             // Season 3 chip listed all 36 episodes of Seasons 1 and 2.
             if (data.selectedSeason.isUpcoming()) return@launch
             val withMetadata = mergeEpisodeMetadata(data.episodes, meta, seasonId)
+            val stillCount = withMetadata.count { !it.image.isNullOrBlank() }
+            com.anilili.diagnostics.DiagnosticsLog.event(
+                "Episode stills applied id=$seasonId meta=${meta.size} rows=${withMetadata.size} stills=$stillCount",
+            )
             _state.value = UiState.Success(
                 data.copy(
                     episodes = markDubbedEpisodes(mergeEpisodeFillerMarks(withMetadata, fillers), dubbedThrough),

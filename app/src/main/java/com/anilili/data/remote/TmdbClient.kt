@@ -154,9 +154,10 @@ class TmdbClient(
         return withContext(Dispatchers.IO) {
             runCatching {
                 cache.getOrFetch(
-                    key = "tmdbeps:v2:${media.id}",
+                    key = "tmdbeps:v3:${media.id}",
                     serializer = ListSerializer(EpisodeMetadata.serializer()),
                     ttlMs = EPISODES_TTL_MS,
+                    cacheIf = { it.isNotEmpty() },
                 ) { fetchEpisodes(media, hint) }
             }
                 .onFailure { DiagnosticsLog.throwable("TMDB episodes failed id=${media.id}", it) }

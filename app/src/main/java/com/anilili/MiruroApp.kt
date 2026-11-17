@@ -7,7 +7,11 @@ import android.os.Process
 import android.os.StrictMode
 import android.os.SystemClock
 import coil.ImageLoader
-import coil.ImageLoaderFactory
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+import coil.ImageLoader
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnitFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.anilili.data.AppGraph
@@ -190,10 +194,16 @@ class MiruroApp : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        // Share the app's connection pool and dispatcher, but not its response cache: Coil keeps
-        // its own disk cache below, and leaving OkHttp's 50 MB one attached would store every
-        // poster twice over — and let image traffic evict the API responses that cache exists for.
-        .okHttpClient { AppGraph.httpClient.newBuilder().cache(null).build() }
+        // Image CDN hosts (image.tmdb.org, etc.) must not ride AppDns: a DoH/auto DNS path that
+        // fails for API hosts used to blank every episode still even when the still URL was correct.
+        // System DNS + short timeouts — Anilili-style posters load independently of stream DNS.
+        .okHttpClient {
+            OkHttpClient.Builder()
+                .connectTimeout(12, TimeUnit.SECONDS)
+                .readTimeout(20, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build()
+        }
         .memoryCache {
             MemoryCache.Builder(this)
                 .maxSizePercent(if (AppGraph.isTv) 0.12 else 0.25)

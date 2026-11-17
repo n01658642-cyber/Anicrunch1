@@ -426,9 +426,11 @@ class KonohaClient(
 
     suspend fun episodes(anilistId: Int): List<KonohaEpisode> = withContext(Dispatchers.IO) {
         cache.getOrFetch(
-            key = "konohaeps:v3:$anilistId",
+            key = "konohaeps:v4:$anilistId",
             serializer = ListSerializer(KonohaEpisode.serializer()),
             ttlMs = EPISODES_TTL_MS,
+            // An empty miss used to be stored for hours — one failed CDN read blanked every still.
+            cacheIf = { it.isNotEmpty() },
         ) {
             val shard = anilistId / 1000
             val relative = "anime/$shard/$anilistId/episodes.json"
