@@ -18,7 +18,10 @@ jobs:
           mkdir -p "$ANDROID_HOME/licenses"
           echo -e "24333f8a63b6825ea9c5514f83c2829b004d1fee\n" > "$ANDROID_HOME/licenses/android-sdk-license"
       - run: sed -i 's/\r$//' gradlew && chmod +x gradlew
-      - run: bash ./gradlew assembleMobileDebug --no-daemon --no-configuration-cache --stacktrace
+      - name: Build debug APK
+        env:
+          TMDB_READ_TOKEN: ${{ secrets.TMDB_READ_TOKEN }}
+        run: bash ./gradlew assembleMobileDebug --no-daemon --no-configuration-cache --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: anilili-debug-apk

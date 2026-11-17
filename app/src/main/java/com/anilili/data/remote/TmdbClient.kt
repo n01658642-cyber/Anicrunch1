@@ -429,26 +429,50 @@ class TmdbClient(
         return null
     }
 
+    /**
+     * TMDB accepts either a v4 read-access token (Bearer) or a classic v3 API key (`api_key=`).
+     * Indian ISPs sometimes block api.themoviedb.org; api.tmdb.org is tried as a mirror.
+     */
     private fun <T> get(path: String, serializer: KSerializer<T>): T? {
+        if (readToken.isBlank()) return null
         val separator = if ('?' in path) "&" else "?"
-        val request = Request.Builder()
-            .url("$API_BASE$path${separator}language=en-US")
-            .header("Authorization", "Bearer $readToken")
-            .header("Accept", "application/json")
-            .build()
-        return client.newCall(request).execute().use { response ->
-            when {
-                // 404 is an ordinary answer here: an id-map guess can point at a record that no
-                // longer exists, and a series can simply have no episode groups.
-                response.code == 404 -> null
-                !response.isSuccessful -> error("TMDB HTTP ${response.code} for $path")
-                else -> json.decodeFromString(serializer, response.body?.string().orEmpty())
+        val useBearer = readToken.startsWith("eyJ") // JWT-shaped v4 token
+        val queryLang = "language=en-US"
+        val queryKey = if (useBearer) queryLang else "$queryLang&api_key=$readToken"
+        val bases = listOf(API_BASE, API_BASE_MIRROR)
+        var lastError: Exception? = null
+        for (base in bases) {
+            try {
+                val builder = Request.Builder()
+                    .url("$base$path$separator$queryKey")
+                    .header("Accept", "application/json")
+                if (useBearer) {
+                    builder.header("Authorization", "Bearer $readToken")
+                }
+                val request = builder.build()
+                client.newCall(request).execute().use { response ->
+                    when {
+                        response.code == 404 -> return null
+                        !response.isSuccessful -> error("TMDB HTTP ${response.code} for $path via $base")
+                        else -> return json.decodeFromString(
+                            serializer,
+                            response.body?.string().orEmpty(),
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                lastError = e
+                DiagnosticsLog.throwable("TMDB request failed base=$base path=$path", e)
             }
         }
+        if (lastError != null) throw lastError
+        return null
     }
 
     private companion object {
         const val API_BASE = "https://api.themoviedb.org/3"
+        /** Public mirror; same v3 surface when the primary host is filtered. */
+        const val API_BASE_MIRROR = "https://api.tmdb.org/3"
         /**
          * The TMDB grouping types that split a run by when it aired, most trusted first: production
          * (6), original air date (1) and TV (7). Which one a series' editors used is arbitrary —

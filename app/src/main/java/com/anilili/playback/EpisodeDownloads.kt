@@ -929,10 +929,18 @@ object EpisodeDownloads {
                 val id = download.request.id
                 val uri = download.request.uri?.toString()
                 scope.launch {
-                    val path = OfflineVideoThumbnail.ensure(appContext, id, uri) ?: return@launch
                     val meta = metadataById[id] ?: return@launch
-                    if (meta.artworkUrl.isNullOrBlank() || meta.artworkUrl == meta.seriesArtworkUrl) {
-                        metadataById[id] = meta.copy(artworkUrl = "file://$path")
+                    // Prefer real TMDB/Konoha still saved to disk; fall back to a frame from the video.
+                    val remoteStill = meta.artworkUrl?.takeIf {
+                        it.isNotBlank() && it != meta.seriesArtworkUrl && !it.startsWith("file://")
+                    }
+                    val cachedStill = EpisodeStillCache.cacheRemoteStill(appContext, id, remoteStill)
+                    val frame = if (cachedStill == null) {
+                        OfflineVideoThumbnail.ensure(appContext, id, uri)
+                    } else null
+                    val local = cachedStill ?: frame
+                    if (local != null) {
+                        metadataById[id] = meta.copy(artworkUrl = if (local.startsWith("/")) "file://$local" else local)
                         refreshDownloads()
                     }
                 }
