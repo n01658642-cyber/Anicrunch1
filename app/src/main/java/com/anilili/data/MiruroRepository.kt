@@ -2140,7 +2140,19 @@ class MiruroRepository(
                 "Episode metadata filled from Jikan id=$anilistId mal=$malId stills=${fromJikan.size}",
             )
         }
-        return mergeEpisodeMetadataSources(withAniList, fromJikan)
+        var combined = mergeEpisodeMetadataSources(withAniList, fromJikan)
+        // Airing / new titles often have no Konoha episodes.json. TMDB still has stills + names —
+        // same data that makes older shows like Vandread fill instantly. Rescue when any row is blank.
+        if (tmdb.isConfigured && (combined.isEmpty() || combined.any { it.still.isNullOrBlank() || it.title.isNullOrBlank() })) {
+            val rescued = tmdb.rescueEpisodeStills(info)
+            if (rescued.isNotEmpty()) {
+                DiagnosticsLog.event(
+                    "Episode metadata TMDB rescue id=$anilistId stills=${rescued.count { !it.still.isNullOrBlank() }}",
+                )
+                combined = mergeEpisodeMetadataSources(combined, rescued)
+            }
+        }
+        return combined
     }
 
     /**

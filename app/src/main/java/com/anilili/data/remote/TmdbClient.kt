@@ -142,6 +142,57 @@ class TmdbClient(
     val isConfigured: Boolean get() = readToken.isNotBlank()
 
     /**
+     * Last-resort stills for airing titles Konoha has not indexed yet.
+     * Searches TMDB by English/romaji and takes the first TV hit whose year is close, then season 1.
+     * Skips the strict [titlesMatch] gate that can refuse long seasonal names.
+     */
+    suspend fun rescueEpisodeStills(media: Media): List<EpisodeMetadata> {
+        if (!isConfigured) return emptyList()
+        return runCatching {
+            cache.getOrFetch(
+                key = "tmdbrescue:v1:${media.id}",
+                serializer = ListSerializer(EpisodeMetadata.serializer()),
+                ttlMs = EPISODES_TTL_MS,
+                cacheIf = { it.isNotEmpty() },
+            ) {
+                val year = media.seasonYear ?: media.startDate?.year
+                val queries = listOf(media.title.english, media.title.romaji, media.title.native)
+                    .mapNotNull { it?.trim()?.takeIf { s -> s.length >= 3 } }
+                    .distinct()
+                for (query in queries) {
+                    val results = get(
+                        "/search/tv?query=" + java.net.URLEncoder.encode(query, "UTF-8"),
+                        TmdbSearchResponse.serializer(),
+                    )?.results.orEmpty()
+                    val hit = results.firstOrNull { candidate ->
+                        val airYear = candidate.first_air_date?.take(4)?.toIntOrNull()
+                        year == null || airYear == null || kotlin.math.abs(airYear - year) <= 1
+                    } ?: results.firstOrNull() ?: continue
+                    val series = get("/tv/${hit.id}", TmdbSeries.serializer()) ?: continue
+                    val seasonNum = series.seasons
+                        .filter { it.season_number > 0 && it.episode_count > 0 }
+                        .minByOrNull { it.season_number }
+                        ?.season_number ?: 1
+                    val episodes = get(
+                        "/tv/${series.id}/season/$seasonNum",
+                        TmdbSeason.serializer(),
+                    )?.episodes.orEmpty()
+                    if (episodes.isEmpty()) continue
+                    DiagnosticsLog.event(
+                        "TMDB rescue anilist=${media.id} tmdb=${series.id} season=$seasonNum " +
+                            "episodes=${episodes.size} query=$query",
+                    )
+                    return@getOrFetch episodes.toMetadata()
+                }
+                emptyList()
+            }
+        }.onFailure {
+            DiagnosticsLog.throwable("TMDB rescue failed id=${media.id}", it)
+        }.getOrDefault(emptyList())
+    }
+
+
+    /**
      * Titles and stills for [media]'s episodes, keyed by AniList episode number, or empty when
      * TMDB has no record this can be matched to with confidence.
      *
