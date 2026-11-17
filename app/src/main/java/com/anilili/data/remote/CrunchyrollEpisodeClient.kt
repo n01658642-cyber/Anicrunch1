@@ -4,7 +4,6 @@ import com.anilili.data.model.EpisodeMetadata
 import com.anilili.data.model.Media
 import com.anilili.data.model.streamingEpisodeMetadata
 import com.anilili.diagnostics.DiagnosticsLog
-import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -12,12 +11,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 /**
  * Episode stills from Crunchyroll sources.
  *
  * Primary: AniList streamingEpisodes (almost always CR CDN thumbnails when licensed).
- * Secondary: CR public search (episode panels need auth; search is best-effort).
  */
 class CrunchyrollEpisodeClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
@@ -41,24 +40,25 @@ class CrunchyrollEpisodeClient(
 
     private fun searchCrunchyroll(media: Media): List<EpisodeMetadata> {
         val query = media.title.english ?: media.title.romaji ?: return emptyList()
-        return runCatching {
+        return try {
             val url =
                 "https://www.crunchyroll.com/content/v2/discover/search" +
                     "?q=" + java.net.URLEncoder.encode(query, "UTF-8") +
                     "&n=6&type=series&locale=en-US"
-            val body = get(url) ?: return@runCatching emptyList()
+            val body = get(url) ?: return emptyList()
             val root = json.parseToJsonElement(body).jsonObject
             val items = root["data"]?.jsonArray
                 ?: root["items"]?.jsonArray
-                ?: return@runCatching emptyList()
+                ?: return emptyList()
             val seriesId = items.firstOrNull()?.jsonObject
                 ?.get("id")?.jsonPrimitive?.contentOrNull
-            if (seriesId.isNullOrBlank()) return@runCatching emptyList()
+            if (seriesId.isNullOrBlank()) return emptyList()
             DiagnosticsLog.event("CR search hit id=${media.id} series=$seriesId")
             emptyList()
-        }.onFailure {
-            DiagnosticsLog.throwable("Crunchyroll search failed id=${media.id}", it)
-        }.getOrDefault(emptyList())
+        } catch (e: Exception) {
+            DiagnosticsLog.throwable("Crunchyroll search failed id=${media.id}", e)
+            emptyList()
+        }
     }
 
     private fun get(url: String): String? {
