@@ -20,7 +20,7 @@
     <string name="external_playback_notification_channel_name">External playback</string>
     <string name="external_playback_notification_channel_description">Keeps protected streams available to another player</string>
     <string name="external_playback_notification_title">Playing in another app</string>
-    <string name="external_playback_notification_description">Anilili is keeping this stream available</string>
+    <string name="external_playback_notification_description">Anime is keeping this stream available</string>
     <string name="external_playback_notification_stop">Stop</string>
     <string name="diagnostics_shortcut_short">Diagnostics</string>
     <string name="diagnostics_shortcut_long">Send diagnostics</string>

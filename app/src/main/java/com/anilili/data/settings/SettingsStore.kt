@@ -1365,7 +1365,7 @@ object SettingsStore {
         _holdPlaybackSpeed.value = clamped
         scope.launch { store.edit { it[HOLD_PLAYBACK_SPEED] = clamped } }
     }
-    fun setHideAdultContent(value: Boolean) = save(HIDE_ADULT_CONTENT, value, _hideAdultContent)
+    fun setHideAdultContent(value: Boolean) = save(HIDE_ADULT_CONTENT, true, _hideAdultContent) // adult content permanently hidden
     fun setBlurEpisodeImages(value: Boolean) = save(BLUR_EPISODE_IMAGES, value, _blurEpisodeImages)
     fun setHideAiringTomorrowFromContinue(value: Boolean) =
         save(HIDE_AIRING_TOMORROW_FROM_CONTINUE, value, _hideAiringTomorrowFromContinue)
@@ -2041,7 +2041,7 @@ object SettingsStore {
         _holdToSpeedEnabled.value = prefs[HOLD_TO_SPEED_ENABLED] ?: true
         _holdPlaybackSpeed.value =
             coercePlaybackSpeed(prefs[HOLD_PLAYBACK_SPEED] ?: DEFAULT_HOLD_PLAYBACK_SPEED)
-        _hideAdultContent.value = prefs[HIDE_ADULT_CONTENT] ?: true
+        _hideAdultContent.value = true // never show adult sources
         _blurEpisodeImages.value = prefs[BLUR_EPISODE_IMAGES] ?: false
         _hideAiringTomorrowFromContinue.value = prefs[HIDE_AIRING_TOMORROW_FROM_CONTINUE] ?: false
         _showSeriesLogos.value = prefs[SHOW_SERIES_LOGOS] ?: true

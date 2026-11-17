@@ -2641,7 +2641,8 @@ fun SettingsScreen(
             }
 
             settingsSection("content", openSectionId) {
-                item(key = "Hide adult content") {
+                // Adult sources permanently removed from this app — no toggle.
+                if (false) item(key = "Hide adult content") {
                     MidnightSettingSwitchRow(
                         title = "Hide adult content",
                         description = "Keep hentai out of Home, Search, Browse and Schedule",

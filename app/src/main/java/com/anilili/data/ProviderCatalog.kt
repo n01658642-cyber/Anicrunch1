@@ -199,10 +199,7 @@ object ProviderCatalog {
         // probe) on top of a Firebase bootstrap the first time, so it is placed late and left out of
         // the fast list until it has been measured on a device.
         "rift",
-        // hstream (2026-10-03) sits with the other two adult servers, which every catalogue drops
-        // while adult content is hidden. Its catalogue is the cached sitemap, so a lookup costs no
-        // request once that is warm, and the stream is header-free DASH — see HStreamProvider.
-        "hanime", "hentaihaven", "hstream",
+        // Adult-only servers (hanime / hentaihaven / hstream) are permanently removed from this fork.
     )
 
     /**
@@ -293,7 +290,7 @@ object ProviderCatalog {
 
     /** The providers to query for [hideAdult]; the adult-only ones drop out when it is set. */
     fun anivexaProvidersFor(hideAdult: Boolean): List<String> =
-        if (hideAdult) anivexaProviders.filterNot(::isAdultOnly) else anivexaProviders
+        anivexaProviders.filterNot(::isAdultOnly) // adult providers permanently excluded
 
     /**
      * [providers] without the servers the viewer switched off in Settings.
@@ -329,7 +326,7 @@ object ProviderCatalog {
     // resolution was fixed and started being cut off instead of failing outright. Its page has to
     // hydrate before the WASM handshake it exists to observe will even run; measured on a Galaxy
     // S25 the resolve was cut off at exactly 8.0s having loaded the page and installed its hook.
-    val webViewResolverProviders = setOf("reanime", "animepahe", "hanime")
+    val webViewResolverProviders = setOf("reanime", "animepahe")
 
     /**
      * Servers whose one stream carries several audio tracks rather than a stream per category.
@@ -623,7 +620,7 @@ object ProviderCatalog {
 
     /** Every server a user can pin in Settings, in the same order the player's picker shows. */
     fun selectableProviders(hideAdult: Boolean): List<String> =
-        if (hideAdult) order.filterNot(::isAdultOnly) else order
+        order.filterNot(::isAdultOnly)
 
     fun label(provider: String): String = when (provider) {
         // Gone as a server (2026-10-03), kept so a download made from it still names its source.

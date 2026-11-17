@@ -18,6 +18,20 @@ import okhttp3.Request
  * and picks an APK asset (prefer arm64, then universal).
  */
 object GitHubUpdateSource {
+    private val SEMVER = Regex("""\b(\d+\.\d+\.\d+)\b""")
+    /** First 0.1.95-style version found in release metadata. */
+    internal fun extractSemver(vararg texts: String): String? {
+        for (text in texts) {
+            SEMVER.find(text)?.groupValues?.getOrNull(1)?.let { return it }
+        }
+        // v-something-095 → 0.1.95 when our versionCode scheme is 0.1.N
+        val tag = texts.lastOrNull().orEmpty()
+        Regex("""(?:^|-)(0?\d{1,3})$""").find(tag.removePrefix("v"))?.groupValues?.getOrNull(1)
+            ?.toIntOrNull()
+            ?.let { n -> if (n in 1..999) return "0.1.$n" }
+        return null
+    }
+
     private const val OWNER = "n01658642-cyber"
     private const val REPO = "Anicrunch1"
     private const val API =
@@ -77,16 +91,22 @@ object GitHubUpdateSource {
         val chosen = list.sortedBy(::score).first()
         val mirrors = list.filter { it.url != chosen.url }.map { it.url }
 
-        // Version from tag: v-crunchy-... stays as tag; prefer versionName-looking tags
-        val version = tag.removePrefix("v").ifBlank { name.ifBlank { tag } }
-        DiagnosticsLog.event("GitHub update: tag=$tag asset=${chosen.name} size=${chosen.size}")
+        // Prefer a real semver (0.1.95) from release name/body/tag. Tags like
+        // "v-stills-all-series-095" must NOT become the version string — compareAppVersions
+        // then treats them as 0.0.0 and claims the install is already newer.
+        val version = extractSemver(name, notes, tag)
+            ?: tag.removePrefix("v").ifBlank { name.ifBlank { tag } }
+        val build = Regex("""\b(\d{2,4})\b""").findAll("$name $tag")
+            .mapNotNull { it.groupValues[1].toIntOrNull() }
+            .lastOrNull()
+        DiagnosticsLog.event("GitHub update: tag=$tag version=$version build=$build asset=${chosen.name}")
         return UpdateManager.UpdateInfo(
             version = version,
             changelog = notes.ifBlank { name.ifBlank { tag } },
             apkUrl = chosen.url,
             sizeBytes = chosen.size,
             mirrors = mirrors,
-            build = null,
+            build = build,
         )
     }
 }
