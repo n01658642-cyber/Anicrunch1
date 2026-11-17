@@ -36,7 +36,7 @@ class ImdbEpisodeClient(
     suspend fun episodeMetadata(media: Media): List<EpisodeMetadata> {
         return runCatching {
             cache.getOrFetch(
-                key = "imdbeps:v1:${media.id}",
+                key = "imdbeps:v2:${media.id}",
                 serializer = ListSerializer(EpisodeMetadata.serializer()),
                 ttlMs = TTL_MS,
                 cacheIf = { it.isNotEmpty() },
@@ -83,10 +83,30 @@ class ImdbEpisodeClient(
             else -> seasons.keys.filter { it > 0 }.minOrNull()
         } ?: seasons.keys.minOrNull() ?: return emptyList()
 
-        val rows = seasons[seasonNum].orEmpty()
+        val base = seasons[seasonNum].orEmpty()
             .sortedBy { it.second }
             .map { it.third }
             .distinctBy { it.number }
+        // Pad 1..N so a late episode never stays blank when Metahub has the slot.
+        val maxEp = maxOf(
+            base.maxOfOrNull { it.number.toInt() } ?: 0,
+            wanted ?: 0,
+            media.nextAiringEpisode?.episode?.minus(1) ?: 0,
+        ).coerceAtLeast(base.size)
+        val byNum = base.associateBy { it.number.toInt() }.toMutableMap()
+        for (n in 1..maxEp) {
+            if (n in byNum && !byNum[n]!!.still.isNullOrBlank()) continue
+            val existing = byNum[n]
+            byNum[n] = EpisodeMetadata(
+                number = n.toDouble(),
+                title = existing?.title,
+                still = existing?.still?.takeIf { it.isNotBlank() }
+                    ?: "https://episodes.metahub.space/$imdbId/$seasonNum/$n/w780.jpg",
+                airDate = existing?.airDate,
+                overview = existing?.overview,
+            )
+        }
+        val rows = byNum.values.sortedBy { it.number }
         DiagnosticsLog.event(
             "IMDb episodes anilist=${media.id} imdb=$imdbId season=$seasonNum rows=${rows.size} " +
                 "stills=${rows.count { !it.still.isNullOrBlank() }}",
@@ -150,7 +170,7 @@ class ImdbEpisodeClient(
 
     companion object {
         private const val META_BASE = "https://v3-cinemeta.strem.io"
-        private const val TTL_MS = 12L * 60 * 60 * 1000
+        private const val TTL_MS = 3L * 60 * 60 * 1000
         private val IMDB_ID_IN_URL = Regex("""(tt\d{5,})""")
     }
 }

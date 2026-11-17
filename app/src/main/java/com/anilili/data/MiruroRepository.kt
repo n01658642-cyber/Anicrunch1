@@ -55,6 +55,7 @@ import com.anilili.data.remote.KonohaEpisode
 import com.anilili.data.remote.toAiringSchedule
 import com.anilili.data.remote.TmdbClient
 import com.anilili.data.remote.ImdbEpisodeClient
+import com.anilili.data.remote.CrunchyrollEpisodeClient
 import com.anilili.data.remote.TvdbRef
 import com.anilili.data.remote.toMedia
 import com.anilili.data.remote.MalClient
@@ -768,6 +769,7 @@ class MiruroRepository(
     private val konoha: KonohaClient,
     private val tmdb: TmdbClient,
     private val imdbEpisodes: ImdbEpisodeClient,
+    private val crunchyrollEpisodes: CrunchyrollEpisodeClient = CrunchyrollEpisodeClient(),
     private val cache: AppCache,
     private val localCatalog: LocalCatalog,
     private val aniZip: AniZipClient,
@@ -2093,7 +2095,25 @@ class MiruroRepository(
                     "stills=${fromImdb.count { !it.still.isNullOrBlank() }}",
             )
         }
-        return mergeEpisodeMetadataSources(fromKonoha, fromImdb)
+        var combined = mergeEpisodeMetadataSources(fromKonoha, fromImdb)
+        // Crunchyroll stills fill remaining gaps (e.g. only ep 7 missing).
+        if (combined.isEmpty() || combined.any { it.still.isNullOrBlank() }) {
+            val fresh = if (info.streamingEpisodes.isEmpty()) {
+                runCatching { animeInfo(anilistId, force = true) }.getOrNull() ?: info
+            } else info
+            val fromCr = runCatching {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    crunchyrollEpisodes.episodeStills(fresh)
+                }
+            }.getOrDefault(emptyList())
+            if (fromCr.isNotEmpty()) {
+                DiagnosticsLog.event(
+                    "Episode metadata from Crunchyroll id=$anilistId rows=${fromCr.size}",
+                )
+                combined = mergeEpisodeMetadataSources(combined, fromCr)
+            }
+        }
+        return combined
     }
 
     /**
