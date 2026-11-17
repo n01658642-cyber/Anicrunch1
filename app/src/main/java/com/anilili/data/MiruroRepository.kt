@@ -2068,13 +2068,23 @@ class MiruroRepository(
         if (info == null) return konohaRun
         // Konoha answers for the whole broadcast run a season belongs to, which for a series AniList
         // splits is not the season that was asked for — see [alignMetadataToSeason].
-        val fromKonoha = alignMetadataToSeason(konohaRun, info)
-        if (fromKonoha.size != konohaRun.size) {
+        val aligned = alignMetadataToSeason(konohaRun, info)
+        if (aligned.size != konohaRun.size) {
             DiagnosticsLog.event(
-                "Episode metadata cut to season id=$anilistId konoha=${konohaRun.size} season=${fromKonoha.size}",
+                "Episode metadata cut to season id=$anilistId konoha=${konohaRun.size} season=${aligned.size}",
             )
         }
+        // Prefer the cut that still has pictures. A bad season align used to throw away every still
+        // and leave the page blank while the uncut Konoha run had perfect TMDB art.
+        val alignedStills = aligned.count { !it.still.isNullOrBlank() }
+        val rawStills = konohaRun.count { !it.still.isNullOrBlank() }
+        val fromKonoha = when {
+            alignedStills > 0 -> aligned
+            rawStills > 0 -> konohaRun
+            else -> aligned.ifEmpty { konohaRun }
+        }
         if (fromKonoha.isNotEmpty() && fromKonoha.none { it.still.isNullOrBlank() }) return fromKonoha
+        // Always ask TMDB when any row is still blank — same path that makes Attack on Titan work.
         val fromTmdb = if (tmdb.isConfigured) {
             tmdb.episodeMetadata(info, konoha.tmdbRefFor(anilistId))
         } else {
@@ -2111,7 +2121,7 @@ class MiruroRepository(
         val malId = info.idMal?.takeIf { it > 0 }
         val fromJikan: List<EpisodeMetadata> = if (malId != null) {
             runCatching {
-                kotlinx.coroutines.withTimeoutOrNull(4_000L) {
+                kotlinx.coroutines.withTimeoutOrNull(15_000L) {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         jikan.episodeVideoStills(malId)
                     }

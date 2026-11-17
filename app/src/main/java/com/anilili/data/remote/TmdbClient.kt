@@ -237,10 +237,16 @@ class TmdbClient(
                         .orEmpty()
                 }
             }
-            if (episodes.size == wantedEpisodes) {
+            val wanted = wantedEpisodes
+            if (episodes.isNotEmpty() && (
+                    wanted == null ||
+                        episodes.size == wanted ||
+                        (wanted > 0 && kotlin.math.abs(episodes.size - wanted) <= 2)
+                    )
+            ) {
                 DiagnosticsLog.event(
                     "TMDB matched anilist=${media.id} tmdb=${series.id} seasons=${wholeRun.size} " +
-                        "episodes=${episodes.size} (whole series)",
+                        "episodes=${episodes.size} wanted=$wanted (whole series)",
                 )
                 return episodes.toMetadata()
             }
@@ -310,6 +316,24 @@ class TmdbClient(
         }
         // Last: the entry is not on the series at all because TMDB keeps its episodes as films.
         movieRun(media).takeIf { it.isNotEmpty() }?.let { return it }
+        // Best-effort: first regular season with any episodes so the page is never still-less when
+        // TMDB has the show but season math disagreed (common for cours / split seasons).
+        series.seasons
+            .filter { it.season_number > 0 && it.episode_count > 0 }
+            .minByOrNull { it.season_number }
+            ?.let { summary ->
+                val episodes = get(
+                    "/tv/${series.id}/season/${summary.season_number}",
+                    TmdbSeason.serializer(),
+                )?.episodes.orEmpty()
+                if (episodes.isNotEmpty()) {
+                    DiagnosticsLog.event(
+                        "TMDB fallback season anilist=${media.id} tmdb=${series.id} " +
+                            "season=${summary.season_number} episodes=${episodes.size}",
+                    )
+                    return episodes.toMetadata()
+                }
+            }
         DiagnosticsLog.event("TMDB no season matched anilist=${media.id} tmdb=${series.id}")
         return emptyList()
     }
