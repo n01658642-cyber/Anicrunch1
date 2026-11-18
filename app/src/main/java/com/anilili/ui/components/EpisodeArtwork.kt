@@ -15,6 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -25,8 +29,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import androidx.compose.ui.platform.LocalContext
 import com.anilili.data.model.EpisodeItem
 
 /** Provider art wins when available; the anime/season art keeps sparse catalogs presentable. */
@@ -70,22 +72,25 @@ fun EpisodeArtwork(
     /** Series banner/cover used only when [image] is set but the CDN 404s (no black box). */
     errorFallback: String? = null,
 ) {
-    val context = LocalContext.current
+    // Coil 2.7 ImageRequest.error() only accepts a Drawable / res id — a URL string threw
+    // IllegalStateException (the still URL itself) on the main thread and crashed detail.
+    // onError + remembered fallback URL is the safe way to avoid black boxes.
+    var loadFailed by remember(image, errorFallback) { mutableStateOf(false) }
+    val model = when {
+        !image.isNullOrBlank() && !loadFailed -> image
+        !errorFallback.isNullOrBlank() && !image.isNullOrBlank() && loadFailed -> errorFallback
+        else -> image
+    }
     Box(modifier = modifier.clipToBounds()) {
         AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(image)
-                .crossfade(true)
-                .apply {
-                    // Only for broken remote URLs — never substitute series art for a missing still
-                    // on multi-episode lists (that paints the same frame on every row).
-                    if (!errorFallback.isNullOrBlank() && !image.isNullOrBlank()) {
-                        error(errorFallback)
-                    }
-                }
-                .build(),
+            model = model,
             contentDescription = null,
             contentScale = contentScale,
+            onError = {
+                if (!errorFallback.isNullOrBlank() && !image.isNullOrBlank() && !loadFailed) {
+                    loadFailed = true
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .then(
