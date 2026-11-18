@@ -200,6 +200,15 @@ class MiruroApp : Application(), ImageLoaderFactory {
                 .connectTimeout(12, TimeUnit.SECONDS)
                 .readTimeout(20, TimeUnit.SECONDS)
                 .followRedirects(true)
+                .addInterceptor { chain ->
+                    val req = chain.request().newBuilder()
+                        .header(
+                            "User-Agent",
+                            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
+                        )
+                        .build()
+                    chain.proceed(req)
+                }
                 .build()
         }
         .memoryCache {

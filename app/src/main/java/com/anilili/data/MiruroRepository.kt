@@ -2080,7 +2080,23 @@ class MiruroRepository(
         }
         if (fromKonoha.isNotEmpty() && fromKonoha.none { it.still.isNullOrBlank() }) return fromKonoha
 
-        // IMDb (via Cinemeta / Metahub) — episode stills for nearly every series. No TMDB/Jikan/AniList.
+        // AniZip (TVDB/TMDB stills via api.ani.zip) — Google-recommended universal fallback.
+        val fromAniZip = runCatching { aniZip.episodeMetadata(anilistId) }
+            .onFailure {
+                it.rethrowIfCancellation()
+                DiagnosticsLog.throwable("AniZip episode metadata failed id=$anilistId", it)
+            }
+            .getOrDefault(emptyList())
+        if (fromAniZip.isNotEmpty()) {
+            DiagnosticsLog.event(
+                "Episode metadata from AniZip id=$anilistId rows=${fromAniZip.size} " +
+                    "stills=${fromAniZip.count { !it.still.isNullOrBlank() }}",
+            )
+        }
+        var combined = mergeEpisodeMetadataSources(fromKonoha, fromAniZip)
+        if (combined.isNotEmpty() && combined.none { it.still.isNullOrBlank() }) return combined
+
+        // IMDb / Cinemeta / Metahub — fills airing titles AniZip has not mapped yet.
         val fromImdb = runCatching {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 imdbEpisodes.episodeMetadata(info)
@@ -2095,7 +2111,7 @@ class MiruroRepository(
                     "stills=${fromImdb.count { !it.still.isNullOrBlank() }}",
             )
         }
-        var combined = mergeEpisodeMetadataSources(fromKonoha, fromImdb)
+        combined = mergeEpisodeMetadataSources(combined, fromImdb)
         // Crunchyroll stills fill remaining gaps (e.g. only ep 7 missing).
         if (combined.isEmpty() || combined.any { it.still.isNullOrBlank() }) {
             val fresh = if (info.streamingEpisodes.isEmpty()) {
