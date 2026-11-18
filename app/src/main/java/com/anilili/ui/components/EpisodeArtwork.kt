@@ -25,6 +25,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 import com.anilili.data.model.EpisodeItem
 
 /** Provider art wins when available; the anime/season art keeps sparse catalogs presentable. */
@@ -65,10 +67,23 @@ fun EpisodeArtwork(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     compact: Boolean = false,
+    /** Series banner/cover used only when [image] is set but the CDN 404s (no black box). */
+    errorFallback: String? = null,
 ) {
+    val context = LocalContext.current
     Box(modifier = modifier.clipToBounds()) {
         AsyncImage(
-            model = image,
+            model = ImageRequest.Builder(context)
+                .data(image)
+                .crossfade(true)
+                .apply {
+                    // Only for broken remote URLs — never substitute series art for a missing still
+                    // on multi-episode lists (that paints the same frame on every row).
+                    if (!errorFallback.isNullOrBlank() && !image.isNullOrBlank()) {
+                        error(errorFallback)
+                    }
+                }
+                .build(),
             contentDescription = null,
             contentScale = contentScale,
             modifier = Modifier

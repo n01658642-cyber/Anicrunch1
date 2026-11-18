@@ -801,20 +801,17 @@ internal fun mergeEpisodeMetadata(
                 ?: episode.number.let { n -> if (n % 1.0 == 0.0) byNumber[n.toInt().toDouble()] else null }
                 ?: return@map episode
             episode.copy(
-                // A provider that filled the title with "Episode 5" counts as having none, or its
-                // placeholder would outrank the real title this overlay exists to supply. A
-                // provider whose titles sit on the wrong numbers has none worth keeping either.
-                title = if (titleBelongsElsewhere(episode, numberByTitle)) {
-                    extra.title
-                } else {
-                    episode.distinctTitle ?: extra.title ?: episode.title
+                // Titles stay on the episode they belong to. Only fill blanks / "Episode N"
+                // placeholders. Never let a wrong catalogue match (titleBelongsElsewhere) pull a
+                // later-arc name onto an early episode of a continuous series.
+                title = run {
+                    val own = episode.distinctTitle ?: episode.title
+                    val ownOk = !own.isNullOrBlank() && !com.anilili.data.model.isGenericEpisodeTitle(own)
+                    when {
+                        ownOk && !titleBelongsElsewhere(episode, numberByTitle) -> own
+                        else -> extra.title?.takeIf { it.isNotBlank() } ?: own
+                    }
                 },
-                // The catalogue still wins over the provider's. A provider thumbnail belongs to
-                // whichever server happens to be selected, so the same episode changed picture
-                // when the viewer switched servers, and servers that ship no art at all left rows
-                // blank next to a perfectly good TMDB still. The provider's art is kept only for
-                // episodes no catalogue could place — mostly the current season, where Konoha has
-                // not backfilled and TMDB may have nothing to map onto yet.
                 image = extra.still?.takeIf { it.isNotBlank() } ?: episode.image,
                 // Kept so the row can say whether it is watchable yet. The provider never states
                 // this and AniList only states the next one, so the catalogue is the only source.

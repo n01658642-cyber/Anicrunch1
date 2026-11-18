@@ -26,14 +26,14 @@ internal data class AniZipMappings(val images: List<AniZipImage> = emptyList())
 /**
  * AniZip (api.ani.zip): keyless TVDB/TMDB-backed mappings for one AniList id.
  *
- * Used for fanart (background picker) and per-episode stills + titles.
+ * Episode numbers for long-running continuous shows must use absoluteEpisodeNumber or the
+ * numeric map key — never seasonal episodeNumber alone, or Season 14 Ep 2 overwrites Episode 2.
  */
 class AniZipClient(
     private val client: OkHttpClient,
     private val json: Json,
     private val cache: AppCache,
 ) {
-    /** TheTVDB wide backdrop(s) for [anilistId], or empty. */
     suspend fun fanart(anilistId: Int): List<String> = withContext(Dispatchers.IO) {
         runCatching {
             cache.getOrFetch(
@@ -46,13 +46,10 @@ class AniZipClient(
             .getOrDefault(emptyList())
     }
 
-    /**
-     * Per-episode stills and titles from AniZip (TVDB art). Empty when the mapping has no episodes.
-     */
     suspend fun episodeMetadata(anilistId: Int): List<EpisodeMetadata> = withContext(Dispatchers.IO) {
         runCatching {
             cache.getOrFetch(
-                key = "anizipeps:v1:$anilistId",
+                key = "anizipeps:v2:$anilistId",
                 serializer = ListSerializer(EpisodeMetadata.serializer()),
                 ttlMs = EPISODES_TTL_MS,
                 cacheIf = { it.isNotEmpty() },
@@ -76,11 +73,24 @@ class AniZipClient(
         val root = json.parseToJsonElement(body).jsonObject
         val episodes = root["episodes"]?.jsonObject ?: return emptyList()
         val rows = episodes.mapNotNull { (key, value) ->
+            // Drop specials / non-numeric keys ("S1", "OVA", "0") so they never offset counts.
+            if (key.toIntOrNull() == null && !key.matches(Regex("""\d+(\.\d+)?"""))) {
+                return@mapNotNull null
+            }
             val obj = value as? JsonObject ?: return@mapNotNull null
-            val number = obj["episodeNumber"]?.jsonPrimitive?.intOrNull
-                ?: obj["absoluteEpisodeNumber"]?.jsonPrimitive?.intOrNull
-                ?: key.toIntOrNull()
-                ?: return@mapNotNull null
+            val abs = obj["absoluteEpisodeNumber"]?.jsonPrimitive?.intOrNull
+            val seasonNum = obj["seasonNumber"]?.jsonPrimitive?.intOrNull
+            val seasonEp = obj["episodeNumber"]?.jsonPrimitive?.intOrNull
+            val keyNum = key.toDoubleOrNull()
+            // Continuous / absolute numbering wins. Seasonal episodeNumber is only used when there
+            // is no absolute index and the key is not itself a continuous number.
+            val number: Double = when {
+                abs != null -> abs.toDouble()
+                keyNum != null && keyNum >= 1.0 -> keyNum
+                seasonNum != null && seasonNum > 1 -> return@mapNotNull null
+                seasonEp != null -> seasonEp.toDouble()
+                else -> return@mapNotNull null
+            }
             val image = obj["image"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
             val titleMap = obj["title"]?.jsonObject
             val title = titleMap?.get("en")?.jsonPrimitive?.contentOrNull
@@ -89,13 +99,17 @@ class AniZipClient(
             val overview = obj["overview"]?.jsonPrimitive?.contentOrNull
             if (image == null && title == null) return@mapNotNull null
             EpisodeMetadata(
-                number = number.toDouble(),
+                number = number,
                 title = title?.takeIf { it.isNotBlank() },
                 still = image,
                 overview = overview?.takeIf { it.isNotBlank() },
             )
         }
-            .distinctBy { it.number }
+            .groupBy { it.number }
+            .map { (_, group) ->
+                // Prefer the row that has a still when the same absolute number appears twice.
+                group.firstOrNull { !it.still.isNullOrBlank() } ?: group.first()
+            }
             .sortedBy { it.number }
         DiagnosticsLog.event(
             "AniZip episodes id=$anilistId rows=${rows.size} stills=${rows.count { !it.still.isNullOrBlank() }}",

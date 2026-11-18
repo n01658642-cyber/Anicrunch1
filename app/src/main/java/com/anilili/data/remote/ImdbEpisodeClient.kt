@@ -36,7 +36,7 @@ class ImdbEpisodeClient(
     suspend fun episodeMetadata(media: Media): List<EpisodeMetadata> {
         return runCatching {
             cache.getOrFetch(
-                key = "imdbeps:v2:${media.id}",
+                key = "imdbeps:v3:${media.id}",
                 serializer = ListSerializer(EpisodeMetadata.serializer()),
                 ttlMs = TTL_MS,
                 cacheIf = { it.isNotEmpty() },
@@ -54,8 +54,8 @@ class ImdbEpisodeClient(
         val videos = meta["videos"]?.jsonArray.orEmpty()
         if (videos.isEmpty()) return emptyList()
 
-        // Prefer season 1 (and season 0 only if nothing else). Match AniList season length when known.
         val wanted = media.episodes
+        val continuous = (wanted ?: 0) > 50
         val bySeason = videos.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val season = o["season"]?.jsonPrimitive?.intOrNull ?: 1
@@ -65,7 +65,6 @@ class ImdbEpisodeClient(
             val name = o["name"]?.jsonPrimitive?.contentOrNull
             val thumb = o["thumbnail"]?.jsonPrimitive?.contentOrNull
                 ?: o["thumbnailUrl"]?.jsonPrimitive?.contentOrNull
-                // Metahub convention when JSON omits thumbnail
                 ?: "https://episodes.metahub.space/$imdbId/$season/$episode/w780.jpg"
             Triple(season, episode, EpisodeMetadata(
                 number = episode.toDouble(),
@@ -73,21 +72,32 @@ class ImdbEpisodeClient(
                 still = thumb,
             ))
         }
-
-        val seasons = bySeason.groupBy { it.first }
+        if (continuous) {
+            // Long-runners (One Piece etc.): number by absolute order across seasons, never
+            // re-base a later TVDB season as episodes 1..N of the continuous list.
+            val ordered = bySeason
+                .filter { it.first > 0 }
+                .sortedWith(compareBy({ it.first }, { it.second }))
+            val rows = ordered.mapIndexed { index, triple ->
+                triple.third.copy(number = (index + 1).toDouble())
+            }
+            DiagnosticsLog.event(
+                "IMDb continuous anilist=${media.id} imdb=$imdbId rows=${rows.size}",
+            )
+            return rows
+        }
         val seasonNum = when {
-            wanted != null -> seasons.entries
+            wanted != null -> bySeason.groupBy { it.first }.entries
                 .filter { it.key > 0 }
                 .minByOrNull { (_, eps) -> kotlin.math.abs(eps.size - wanted) }
                 ?.key
-            else -> seasons.keys.filter { it > 0 }.minOrNull()
-        } ?: seasons.keys.minOrNull() ?: return emptyList()
+            else -> bySeason.map { it.first }.filter { it > 0 }.minOrNull()
+        } ?: bySeason.map { it.first }.minOrNull() ?: return emptyList()
 
-        val base = seasons[seasonNum].orEmpty()
+        val base = bySeason.filter { it.first == seasonNum }
             .sortedBy { it.second }
             .map { it.third }
             .distinctBy { it.number }
-        // Pad 1..N so a late episode never stays blank when Metahub has the slot.
         val maxEp = maxOf(
             base.maxOfOrNull { it.number.toInt() } ?: 0,
             wanted ?: 0,
@@ -108,8 +118,7 @@ class ImdbEpisodeClient(
         }
         val rows = byNum.values.sortedBy { it.number }
         DiagnosticsLog.event(
-            "IMDb episodes anilist=${media.id} imdb=$imdbId season=$seasonNum rows=${rows.size} " +
-                "stills=${rows.count { !it.still.isNullOrBlank() }}",
+            "IMDb episodes anilist=${media.id} imdb=$imdbId season=$seasonNum rows=${rows.size}",
         )
         return rows
     }

@@ -758,6 +758,7 @@ private fun DetailContent(
                                     shown,
                                     seasonCover ?: info.bannerImage ?: info.coverImage.best,
                                 ),
+                                seriesArt = seasonCover ?: info.bannerImage ?: info.coverImage.best,
                                 blurred = blurEpisodeImages,
                                 watchedFraction = episodeWatchFraction(seasonResume, episode.number),
                                 watched = episodeWatched,

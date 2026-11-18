@@ -276,6 +276,12 @@ internal fun streamingRowsFitSeason(
  * does not have at all are appended, which is the case where Konoha has never heard of the title
  * and the fallback is carrying the whole list.
  */
+/** True for placeholder labels like "Episode 12" / "Ep 3" that must not block a real title. */
+fun isGenericEpisodeTitle(title: String): Boolean {
+    val t = title.trim()
+    return t.matches(Regex("""(?i)^(?:episode|ep)\.?\s*\d+(\.\d+)?$"""))
+}
+
 fun mergeEpisodeMetadataSources(
     primary: List<EpisodeMetadata>,
     fallback: List<EpisodeMetadata>,
@@ -286,7 +292,10 @@ fun mergeEpisodeMetadataSources(
     val filled = primary.map { episode ->
         val other = extra[episode.number] ?: return@map episode
         episode.copy(
-            title = episode.title?.takeIf { it.isNotBlank() } ?: other.title,
+            // Never overwrite a real title with a fallback (prevents Dressrosa names on ep 102).
+            title = episode.title?.takeIf { it.isNotBlank() && !isGenericEpisodeTitle(it) }
+                ?: other.title?.takeIf { !it.isNullOrBlank() }
+                ?: episode.title,
             still = episode.still?.takeIf { it.isNotBlank() } ?: other.still,
             airDate = episode.airDate ?: other.airDate,
             // Filled field by field rather than row by row, because the sources are strong in
