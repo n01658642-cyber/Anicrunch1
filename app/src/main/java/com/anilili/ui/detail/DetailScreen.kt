@@ -1604,6 +1604,7 @@ private fun EpisodeListActions(
 private fun DetailEpisodeRow(
     episode: EpisodeItem,
     fallbackImage: String?,
+    seriesArt: String? = null,
     blurred: Boolean,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
@@ -1650,6 +1651,7 @@ private fun DetailEpisodeRow(
                 image = episodeArtworkImage(episode.image, fallbackImage),
                 blurred = blurred,
                 modifier = Modifier.fillMaxSize(),
+                errorFallback = seriesArt,
             )
             if (episode.filler) {
                 EpisodeFillerBadge(
