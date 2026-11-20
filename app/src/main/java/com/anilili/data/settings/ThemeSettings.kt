@@ -39,6 +39,7 @@ enum class ThemeAccent(val storedValue: String, val label: String, val seed: Lon
     CYAN("cyan", "Cyan", 0xFF22D3EE),
     SAKURA_PINK("sakura_pink", "Sakura pink", 0xFFF472B6),
     SUNSET_ORANGE("sunset_orange", "Sunset orange", 0xFFF97316),
+    CRUNCHYROLL_ORANGE("crunchyroll_orange", "Crunchyroll orange", 0xFFF47521),
     GOLD("gold", "Gold", 0xFFFACC15),
     EMERALD("emerald", "Emerald", 0xFF10B981);
 
@@ -181,4 +182,23 @@ internal fun backdropUrlOf(source: AppBackdropSource, animeUrl: String?, imageUr
     AppBackdropSource.NONE -> null
     AppBackdropSource.ANIME -> animeUrl
     AppBackdropSource.IMAGE -> imageUrl
+}
+
+
+/**
+ * Overall chrome / navigation shell. Classic keeps Anilili layout; Crunchyroll switches colours,
+ * bottom-bar destinations, and accent to match Crunchyroll's orange mobile app.
+ */
+enum class UiShellMode(val storedValue: String, val label: String, val description: String) {
+    CLASSIC("classic", "Classic", "Original Anime layout and colours"),
+    CRUNCHYROLL(
+        "crunchyroll",
+        "Crunchyroll",
+        "Orange accent, Home / My Lists / Browse / Simulcasts / Account",
+    );
+
+    companion object {
+        fun fromStored(value: String?): UiShellMode =
+            entries.firstOrNull { it.storedValue == value } ?: CLASSIC
+    }
 }

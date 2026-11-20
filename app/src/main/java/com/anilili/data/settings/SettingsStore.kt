@@ -1121,6 +1121,9 @@ object SettingsStore {
     private val _themeContrast = MutableStateFlow(ThemeContrast.STANDARD)
     val themeContrast = _themeContrast.asStateFlow()
 
+    private val _uiShellMode = MutableStateFlow(UiShellMode.CLASSIC)
+    val uiShellMode = _uiShellMode.asStateFlow()
+
     /** The colour behind [ThemeAccent.CUSTOM], kept even while another accent is chosen. */
     private val _themeCustomSeed = MutableStateFlow(DEFAULT_CUSTOM_SEED)
     val themeCustomSeed = _themeCustomSeed.asStateFlow()
@@ -1565,6 +1568,26 @@ object SettingsStore {
     fun setThemeStyle(value: ThemeStyle) {
         _themeStyle.value = value
         scope.launch { store.edit { it[THEME_STYLE] = value.storedValue } }
+    }
+
+    fun setUiShellMode(value: UiShellMode) {
+        _uiShellMode.value = value
+        // Crunchyroll shell forces the signature orange accent + AMOLED canvas.
+        if (value == UiShellMode.CRUNCHYROLL) {
+            _themeBackground.value = ThemeBackground.AMOLED
+            _themeAccent.value = ThemeAccent.CRUNCHYROLL_ORANGE
+            _themeStyle.value = ThemeStyle.VIVID
+        }
+        scope.launch {
+            store.edit {
+                it[UI_SHELL_MODE] = value.storedValue
+                if (value == UiShellMode.CRUNCHYROLL) {
+                    it[THEME_BACKGROUND] = ThemeBackground.AMOLED.storedValue
+                    it[THEME_ACCENT] = ThemeAccent.CRUNCHYROLL_ORANGE.storedValue
+                    it[THEME_STYLE] = ThemeStyle.VIVID.storedValue
+                }
+            }
+        }
     }
 
     fun setThemeContrast(value: ThemeContrast) {
@@ -2081,6 +2104,7 @@ object SettingsStore {
         _themeAccent.value = ThemeAccent.fromStored(prefs[THEME_ACCENT])
         _themeStyle.value = ThemeStyle.fromStored(prefs[THEME_STYLE])
         _themeContrast.value = ThemeContrast.fromStored(prefs[THEME_CONTRAST])
+        _uiShellMode.value = UiShellMode.fromStored(prefs[UI_SHELL_MODE])
         _playerAccent.value = prefs[PLAYER_ACCENT] ?: false
         _themeCustomSeed.value = prefs[THEME_CUSTOM_SEED] ?: DEFAULT_CUSTOM_SEED
         _showColourPages.value = prefs[SHOW_COLOUR_PAGES] ?: true
@@ -2255,6 +2279,7 @@ object SettingsStore {
     private val THEME_ACCENT = stringPreferencesKey("theme_accent")
     private val THEME_STYLE = stringPreferencesKey("theme_style")
     private val THEME_CONTRAST = stringPreferencesKey("theme_contrast")
+    private val UI_SHELL_MODE = stringPreferencesKey("ui_shell_mode")
     private val PLAYER_ACCENT = booleanPreferencesKey("player_accent")
     private val THEME_CUSTOM_SEED = intPreferencesKey("theme_custom_seed")
     private val SHOW_COLOUR_PAGES = booleanPreferencesKey("show_colour_pages")

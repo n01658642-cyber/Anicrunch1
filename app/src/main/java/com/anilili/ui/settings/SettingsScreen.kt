@@ -142,6 +142,7 @@ import com.anilili.data.settings.SettingsStore
 import com.anilili.data.settings.SourceFilterLanguage
 import com.anilili.data.settings.SubtitleSearchLanguage
 import com.anilili.data.settings.ThemeAccent
+import com.anilili.data.settings.UiShellMode
 import com.anilili.data.settings.ThemeBackground
 import com.anilili.data.settings.AppBackdropDim
 import com.anilili.data.settings.AppBackdropSource
@@ -288,6 +289,7 @@ private enum class SettingsPicker {
     DISCORD_STATUS,
     UI_SCALE,
     TV_OVERSCAN,
+    UI_SHELL,
     THEME_BACKGROUND,
     THEME_ACCENT,
     THEME_STYLE,
@@ -365,6 +367,7 @@ fun SettingsScreen(
     val uiScale by SettingsStore.uiScale.collectAsState()
     val tvOverscanPercent by SettingsStore.tvOverscanPercent.collectAsState()
     val themeBackground by SettingsStore.themeBackground.collectAsState()
+    val uiShellMode by SettingsStore.uiShellMode.collectAsState()
     val themeAccent by SettingsStore.themeAccent.collectAsState()
     val themeStyle by SettingsStore.themeStyle.collectAsState()
     val themeContrast by SettingsStore.themeContrast.collectAsState()
@@ -1753,6 +1756,20 @@ fun SettingsScreen(
             onDismiss = closePicker,
         )
 
+        SettingsPicker.UI_SHELL -> MidnightChoicePicker(
+            kicker = "Appearance",
+            title = "App layout",
+            explanation = "Classic keeps the original layout. Crunchyroll switches the bottom bar " +
+                "to Home / My Lists / Browse / Simulcasts / Account and the orange Crunchyroll accent.",
+            options = UiShellMode.entries,
+            selected = uiShellMode,
+            label = { it.label },
+            description = { it.description },
+            onSelect = SettingsStore::setUiShellMode,
+            onDismiss = closePicker,
+            dismissOnSelect = true,
+        )
+
         SettingsPicker.THEME_BACKGROUND -> MidnightChoicePicker(
             kicker = "Appearance",
             title = "Background",
@@ -2714,6 +2731,14 @@ fun SettingsScreen(
                             ThemePreview()
                         }
                     }
+                }
+                item(key = "App layout") {
+                    MidnightSettingRow(
+                        title = "App layout",
+                        description = "Classic or Crunchyroll-style shell",
+                        value = uiShellMode.label,
+                        onClick = { openPicker = SettingsPicker.UI_SHELL },
+                    )
                 }
                 item(key = "Theme presets") {
                     ThemePresetRow(

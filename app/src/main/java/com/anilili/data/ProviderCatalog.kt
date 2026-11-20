@@ -652,7 +652,7 @@ object ProviderCatalog {
         "animekhor" -> "AnimeKhor"
         "toonhub" -> "ToonHub4u"
         "rareanimes" -> "RareAnimes"
-        "hentaihaven" -> "Hentai Haven"
+        "hentaihaven" -> "Removed"
         "hstream" -> "HStream"
         "onepace" -> "One Pace"
         "uniquestream" -> "UniqueStream"

@@ -697,7 +697,25 @@ private enum class Tab(
  * Schedule is not here: it belongs to Home, whose top bar is where it sits. Five destinations is
  * what the icon-only bar holds with comfortable touch targets on narrow phones.
  */
-private val phoneTabs = listOf(Tab.HOME, Tab.SEARCH, Tab.DOWNLOADS, Tab.MORE, Tab.SETTINGS)
+private val phoneTabsClassic = listOf(Tab.HOME, Tab.SEARCH, Tab.DOWNLOADS, Tab.MORE, Tab.SETTINGS)
+/** Crunchyroll mobile order: Home, My Lists, Browse, Simulcasts, Account. */
+private val phoneTabsCrunchyroll = listOf(Tab.HOME, Tab.MORE, Tab.SEARCH, Tab.SCHEDULE, Tab.SETTINGS)
+
+private fun phoneTabsFor(shell: UiShellMode): List<Tab> =
+    if (shell == UiShellMode.CRUNCHYROLL) phoneTabsCrunchyroll else phoneTabsClassic
+
+/** Classic labels stay on the enum; Crunchyroll uses CR-style names. */
+private fun Tab.shellLabel(shell: UiShellMode, language: MenuLanguage): String {
+    if (shell != UiShellMode.CRUNCHYROLL) return label(language)
+    return when (this) {
+        Tab.HOME -> if (language.usesSpanish()) "Inicio" else "Home"
+        Tab.MORE -> if (language.usesSpanish()) "Mis listas" else "My Lists"
+        Tab.SEARCH -> if (language.usesSpanish()) "Explorar" else "Browse"
+        Tab.SCHEDULE -> if (language.usesSpanish()) "Simulcasts" else "Simulcasts"
+        Tab.SETTINGS -> if (language.usesSpanish()) "Cuenta" else "Account"
+        Tab.DOWNLOADS -> if (language.usesSpanish()) "Descargas" else "Downloads"
+    }
+}
 
 /**
  * Room the floating phone navigation capsule occupies above the system navigation inset — the
@@ -944,6 +962,8 @@ private fun MiruroRoot(
             // themselves: an anime page shows the capsule too, but a swipe there is not a request
             // to leave it for the tab beside Home.
             val tabSwipe = rememberTabSwipeState()
+            val uiShellSwipe by SettingsStore.uiShellMode.collectAsState()
+            val phoneTabs = phoneTabsFor(uiShellSwipe)
             val swipeTabIndex = phoneTabs.indexOfFirst { it.route == currentRoute }
             Scaffold(
                 containerColor = canvasColor(),
@@ -1041,11 +1061,13 @@ private fun MiruroRoot(
                 // that one with a drawn books-on-a-shelf vector, which was the right picture for a
                 // destination called "Library" and the wrong one for a list: a shelf says "things
                 // you own", and a bookmark says "things you marked", which is what the page is.
-                val navItems = remember(menuLanguage) {
+                val uiShell by SettingsStore.uiShellMode.collectAsState()
+                val phoneTabs = phoneTabsFor(uiShell)
+                val navItems = remember(menuLanguage, uiShell) {
                     phoneTabs.map { tab ->
                         FloatingNavItem(
                             route = tab.route,
-                            label = tab.label(menuLanguage),
+                            label = tab.shellLabel(uiShell, menuLanguage),
                             icon = tab.icon,
                         )
                     }
