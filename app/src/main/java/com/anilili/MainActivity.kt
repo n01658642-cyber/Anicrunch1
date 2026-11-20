@@ -218,6 +218,9 @@ import com.anilili.ui.components.timeOfDayFormatter
 import com.anilili.ui.detail.DetailScreen
 import com.anilili.ui.downloads.DownloadsScreen
 import com.anilili.ui.home.HomeScreen
+import com.anilili.ui.crunchyroll.CrMyListsScreen
+import com.anilili.ui.crunchyroll.CrBrowseScreen
+import com.anilili.ui.crunchyroll.CrHomeScreen
 import com.anilili.errors.AnililiError
 import com.anilili.errors.report
 import com.anilili.ui.nav.AnililiLink
@@ -1809,6 +1812,8 @@ private fun AppNavHost(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val uiShell by SettingsStore.uiShellMode.collectAsState()
+    val crShell = uiShell == UiShellMode.CRUNCHYROLL
     NavHost(
         navController = nav,
         startDestination = Routes.HOME,
@@ -1820,25 +1825,37 @@ private fun AppNavHost(
     ) {
             composable(Routes.HOME) {
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route HOME content entered") }
-                HomeScreen(
-                    onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
-                    onWatchNow = { id ->
-                        val saved = com.anilili.data.library.LibraryStore.historyFor(id)
-                        if (saved != null) nav.navigate(resumeRoute(context, id, saved.provider, saved.category, saved.episodeLabel))
-                        else nav.navigate(resumeRoute(context, id, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
-                    },
-                    onResume = { e -> nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel)) },
-                    onOpenDetails = { e -> nav.navigate(Routes.detail(e.anilistId)) },
-                    onSearchClick = { nav.navigateTab(Routes.SEARCH) },
-                    onScheduleClick = { nav.navigateTab(Routes.SCHEDULE) },
-                    onGenreClick = { genre ->
-                        if (genre == null) nav.navigateTab(Routes.SEARCH)
-                        else nav.navigate(Routes.genreSearch(genre)) { launchSingleTop = true }
-                    },
-                    onNotificationsClick = { nav.navigate(Routes.NOTIFICATIONS) { launchSingleTop = true } },
-                    tvPrimaryFocusTarget = tvHomePrimaryFocusTarget,
-                    tvRefreshRequest = tvHomeRefresh,
-                )
+                if (crShell) {
+                    CrHomeScreen(
+                        onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                        onWatchNow = { id ->
+                            val saved = com.anilili.data.library.LibraryStore.historyFor(id)
+                            if (saved != null) nav.navigate(resumeRoute(context, id, saved.provider, saved.category, saved.episodeLabel))
+                            else nav.navigate(resumeRoute(context, id, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
+                        },
+                        onSearchClick = { nav.navigateTab(Routes.SEARCH) },
+                    )
+                } else {
+                    HomeScreen(
+                        onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                        onWatchNow = { id ->
+                            val saved = com.anilili.data.library.LibraryStore.historyFor(id)
+                            if (saved != null) nav.navigate(resumeRoute(context, id, saved.provider, saved.category, saved.episodeLabel))
+                            else nav.navigate(resumeRoute(context, id, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
+                        },
+                        onResume = { e -> nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel)) },
+                        onOpenDetails = { e -> nav.navigate(Routes.detail(e.anilistId)) },
+                        onSearchClick = { nav.navigateTab(Routes.SEARCH) },
+                        onScheduleClick = { nav.navigateTab(Routes.SCHEDULE) },
+                        onGenreClick = { genre ->
+                            if (genre == null) nav.navigateTab(Routes.SEARCH)
+                            else nav.navigate(Routes.genreSearch(genre)) { launchSingleTop = true }
+                        },
+                        onNotificationsClick = { nav.navigate(Routes.NOTIFICATIONS) { launchSingleTop = true } },
+                        tvPrimaryFocusTarget = tvHomePrimaryFocusTarget,
+                        tvRefreshRequest = tvHomeRefresh,
+                    )
+                }
             }
             composable(Routes.NOTIFICATIONS) {
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route NOTIFICATIONS content entered") }
@@ -1873,14 +1890,21 @@ private fun AppNavHost(
             ) { entry ->
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route SEARCH content entered") }
                 TvTopNavigationInset {
-                    SearchScreen(
-                        onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
-                        tvFieldFocusTarget = tvSearchFieldFocusTarget,
-                        initialStudioId = entry.arguments?.getInt(Routes.Arg.STUDIO_ID)?.takeIf { it > 0 },
-                        initialStudioName = entry.arguments?.getString(Routes.Arg.STUDIO_NAME),
-                        initialGenre = entry.arguments?.getString(Routes.Arg.GENRE),
-                        initialQuery = entry.arguments?.getString(Routes.Arg.QUERY),
-                    )
+                    if (crShell) {
+                        CrBrowseScreen(
+                            onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                            onSearchClick = { /* already on browse */ },
+                        )
+                    } else {
+                        SearchScreen(
+                            onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                            tvFieldFocusTarget = tvSearchFieldFocusTarget,
+                            initialStudioId = entry.arguments?.getInt(Routes.Arg.STUDIO_ID)?.takeIf { it > 0 },
+                            initialStudioName = entry.arguments?.getString(Routes.Arg.STUDIO_NAME),
+                            initialGenre = entry.arguments?.getString(Routes.Arg.GENRE),
+                            initialQuery = entry.arguments?.getString(Routes.Arg.QUERY),
+                        )
+                    }
                 }
             }
             composable(Routes.SCHEDULE) {
@@ -1892,16 +1916,24 @@ private fun AppNavHost(
             composable(Routes.MORE) {
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route MORE content entered") }
                 TvTopNavigationInset {
-                    ProfileScreen(
-                        onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
-                        onResume = { e ->
-                            nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel))
-                        },
-                        onOpenDetails = { e -> nav.navigate(Routes.detail(e.anilistId)) },
-                        onPlayDownload = { downloadId ->
-                            nav.navigate(Routes.download(downloadId))
-                        },
-                    )
+                    if (crShell) {
+                        CrMyListsScreen(
+                            onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                            onSearchClick = { nav.navigateTab(Routes.SEARCH) },
+                            onOpenDownloads = { nav.navigateTab(Routes.DOWNLOADS) },
+                        )
+                    } else {
+                        ProfileScreen(
+                            onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                            onResume = { e ->
+                                nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel))
+                            },
+                            onOpenDetails = { e -> nav.navigate(Routes.detail(e.anilistId)) },
+                            onPlayDownload = { downloadId ->
+                                nav.navigate(Routes.download(downloadId))
+                            },
+                        )
+                    }
                 }
             }
             composable(Routes.DOWNLOADS) {
