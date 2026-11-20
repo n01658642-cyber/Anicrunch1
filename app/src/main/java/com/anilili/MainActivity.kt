@@ -151,6 +151,7 @@ import com.anilili.data.remote.PipeBridge
 import com.anilili.data.remote.canHostPipeEngine
 import com.anilili.data.settings.MenuLanguage
 import com.anilili.data.settings.SettingsStore
+import com.anilili.data.settings.UiShellMode
 import com.anilili.data.update.UpdateManager
 import com.anilili.diagnostics.CrashReportDialog
 import com.anilili.diagnostics.CrashReporter
