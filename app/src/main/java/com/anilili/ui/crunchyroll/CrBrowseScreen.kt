@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cast
@@ -34,8 +35,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,110 +54,147 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.anilili.data.model.Media
 import com.anilili.ui.UiState
+import com.anilili.ui.home.HomeSection
 import com.anilili.ui.home.HomeViewModel
 
 @Composable
 fun CrBrowseScreen(
     onAnimeClick: (Int) -> Unit,
-    onSearchClick: () -> Unit,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     vm: HomeViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsState()
+    val loadingMore by vm.loadingMore.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
+    var showSearch by remember { mutableStateOf(false) }
     val tabs = listOf("All Anime", "Simulcasts", "Anime Genres", "Music")
+    val gridState = rememberLazyGridState()
+    val accent = CrColors.accent
     LaunchedEffect(Unit) { vm.load() }
 
-    Column(modifier.fillMaxSize().background(CrColors.Black)) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Browse",
-                color = CrColors.TextPrimary,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = { }) {
-                Icon(Icons.Outlined.Cast, null, tint = Color.White)
-            }
-            IconButton(onClick = onSearchClick) {
-                Icon(Icons.Outlined.Search, null, tint = Color.White)
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val info = gridState.layoutInfo
+            val total = info.totalItemsCount
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 0 && last >= total - 4
+        }
+    }
+    LaunchedEffect(shouldLoadMore, tab) {
+        if (shouldLoadMore) {
+            when (tab) {
+                0 -> vm.loadMore(HomeSection.POPULAR)
+                1 -> vm.loadMore(HomeSection.NEWEST)
+                2 -> vm.loadMore(HomeSection.TOP_RATED)
+                else -> vm.loadMore(HomeSection.POPULAR)
             }
         }
-        ScrollableTabRow(
-            selectedTabIndex = tab,
-            containerColor = CrColors.Black,
-            contentColor = CrColors.Orange,
-            edgePadding = 12.dp,
-            indicator = { positions ->
-                if (tab < positions.size) {
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(positions[tab]),
-                        color = CrColors.Orange,
-                        height = 3.dp,
+    }
+
+    Box(modifier.fillMaxSize().background(CrColors.Black)) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Browse",
+                    color = CrColors.TextPrimary,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = { showSearch = true }) {
+                    Icon(Icons.Outlined.Search, null, tint = Color.White)
+                }
+            }
+            ScrollableTabRow(
+                selectedTabIndex = tab,
+                containerColor = CrColors.Black,
+                contentColor = accent,
+                edgePadding = 12.dp,
+                indicator = { positions ->
+                    if (tab < positions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            Modifier.tabIndicatorOffset(positions[tab]),
+                            color = accent,
+                            height = 3.dp,
+                        )
+                    }
+                },
+                divider = {},
+            ) {
+                tabs.forEachIndexed { i, label ->
+                    Tab(
+                        selected = tab == i,
+                        onClick = { tab = i },
+                        text = {
+                            Text(
+                                label,
+                                fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal,
+                                color = if (tab == i) CrColors.TextPrimary else CrColors.TabInactive,
+                            )
+                        },
                     )
                 }
-            },
-            divider = {},
-        ) {
-            tabs.forEachIndexed { i, label ->
-                Tab(
-                    selected = tab == i,
-                    onClick = { tab = i },
-                    text = {
-                        Text(
-                            label,
-                            fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal,
-                            color = if (tab == i) CrColors.TextPrimary else CrColors.TabInactive,
-                        )
-                    },
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Popular",
+                    color = CrColors.TextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
                 )
+                Icon(Icons.Outlined.Sort, null, tint = CrColors.TextSecondary, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.size(12.dp))
+                Icon(Icons.Outlined.FilterList, null, tint = CrColors.TextSecondary, modifier = Modifier.size(22.dp))
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Popular",
-                color = CrColors.TextPrimary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
-            )
-            Icon(Icons.Outlined.Sort, null, tint = CrColors.TextSecondary, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.size(12.dp))
-            Icon(Icons.Outlined.FilterList, null, tint = CrColors.TextSecondary, modifier = Modifier.size(22.dp))
-        }
-        when (val s = state) {
-            is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = CrColors.Orange)
-            }
-            is UiState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(s.failure.message, color = CrColors.TextSecondary)
-            }
-            is UiState.Success -> {
-                val list = when (tab) {
-                    1 -> s.data.newest
-                    2 -> s.data.topRated
-                    else -> s.data.popular
+            when (val s = state) {
+                is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = accent)
                 }
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(list, key = { it.id }) { media ->
-                        CrBrowseCard(media = media, onClick = { onAnimeClick(media.id) })
+                is UiState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(s.failure.message, color = CrColors.TextSecondary)
+                }
+                is UiState.Success -> {
+                    val list = when (tab) {
+                        1 -> s.data.newest
+                        2 -> s.data.topRated
+                        else -> s.data.popular
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        state = gridState,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(list, key = { it.id }) { media ->
+                            CrBrowseCard(media = media, onClick = { onAnimeClick(media.id) })
+                        }
+                        if (loadingMore.isNotEmpty()) {
+                            item {
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(color = accent, modifier = Modifier.size(28.dp))
+                                }
+                            }
+                        }
+                        item { Spacer(Modifier.height(80.dp)) }
+                    }
                 }
             }
+        }
+        if (showSearch) {
+            CrSearchOverlay(
+                onDismiss = { showSearch = false },
+                onAnimeClick = onAnimeClick,
+            )
         }
     }
 }

@@ -270,7 +270,7 @@ fun DownloadsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .appCanvas(),
+            .background(Color.Black),
         // No statusBarsPadding here: PageTitleBar applies its own, and this page has no Scaffold to
         // arbitrate between them, so both would be honoured and the title would sit a status bar
         // lower than every other page's.

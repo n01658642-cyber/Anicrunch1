@@ -219,6 +219,7 @@ import com.anilili.ui.detail.DetailScreen
 import com.anilili.ui.downloads.DownloadsScreen
 import com.anilili.ui.home.HomeScreen
 import com.anilili.ui.crunchyroll.CrMyListsScreen
+import com.anilili.ui.crunchyroll.CrDetailScreen
 import com.anilili.ui.crunchyroll.CrBrowseScreen
 import com.anilili.ui.crunchyroll.CrHomeScreen
 import com.anilili.errors.AnililiError
@@ -1983,36 +1984,45 @@ private fun AppNavHost(
                 // no episode to single out and opens the way it always has.
                 val returnEpisode = entry.arguments?.getString(Routes.Arg.EPISODE)
                 LaunchedEffect(id) { DiagnosticsLog.event("Route DETAIL content entered id=$id") }
-                DetailScreen(
-                    animeId = id,
-                    focusEpisode = returnEpisode,
-                    onBack = { nav.popBackStack() },
-                    onAnimeClick = { relatedId ->
-                        if (relatedId != id) nav.navigate(Routes.detail(relatedId))
-                    },
-                    onStudioClick = { studio ->
-                        val name = studio.name
-                        if (studio.id > 0 && !name.isNullOrBlank()) {
-                            nav.navigate(Routes.studioSearch(studio.id, name)) { launchSingleTop = true }
-                        }
-                    },
-                    onPlay = { playId, provider, category, episode ->
-                        // Play/Resume means play on every device. On TV the Watch route starts
-                        // fullscreen and PlayerSurface starts immediately; the detail page's
-                        // Episodes tab remains the explicit route for choosing another episode.
-                        // playId may be another season hosted by this detail-page season chain.
-                        nav.navigate(Routes.watch(playId, provider, category, episode))
-                    },
-                    onSeasonWatch = { seasonId ->
-                        val saved = com.anilili.data.library.LibraryStore.historyFor(seasonId)
-                        if (saved != null) {
-                            nav.navigate(Routes.episodes(seasonId, saved.provider, saved.category, saved.episodeLabel))
-                        } else {
-                            nav.navigate(Routes.episodes(seasonId, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
-                        }
-                    },
-                    tvRefreshRequest = tvDetailRefresh,
-                )
+                if (crShell) {
+                    CrDetailScreen(
+                        animeId = id,
+                        onBack = { nav.popBackStack() },
+                        onAnimeClick = { relatedId ->
+                            if (relatedId != id) nav.navigate(Routes.detail(relatedId))
+                        },
+                        onPlay = { playId, provider, category, episode ->
+                            nav.navigate(Routes.watch(playId, provider, category, episode))
+                        },
+                    )
+                } else {
+                    DetailScreen(
+                        animeId = id,
+                        focusEpisode = returnEpisode,
+                        onBack = { nav.popBackStack() },
+                        onAnimeClick = { relatedId ->
+                            if (relatedId != id) nav.navigate(Routes.detail(relatedId))
+                        },
+                        onStudioClick = { studio ->
+                            val name = studio.name
+                            if (studio.id > 0 && !name.isNullOrBlank()) {
+                                nav.navigate(Routes.studioSearch(studio.id, name)) { launchSingleTop = true }
+                            }
+                        },
+                        onPlay = { playId, provider, category, episode ->
+                            nav.navigate(Routes.watch(playId, provider, category, episode))
+                        },
+                        onSeasonWatch = { seasonId ->
+                            val saved = com.anilili.data.library.LibraryStore.historyFor(seasonId)
+                            if (saved != null) {
+                                nav.navigate(Routes.episodes(seasonId, saved.provider, saved.category, saved.episodeLabel))
+                            } else {
+                                nav.navigate(Routes.episodes(seasonId, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
+                            }
+                        },
+                        tvRefreshRequest = tvDetailRefresh,
+                    )
+                }
             }
 
             composable(

@@ -40,6 +40,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,12 +71,13 @@ fun CrHomeScreen(
 ) {
     val state by vm.state.collectAsState()
     val personal by vm.personal.collectAsState()
-    LaunchedEffect(Unit) { vm.load() }
+    var showSearch by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { vm.load(); vm.loadPersonal() }
 
     Box(modifier = modifier.fillMaxSize().background(CrColors.Black)) {
         when (val s = state) {
             is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = CrColors.Orange)
+                CircularProgressIndicator(color = CrColors.accent)
             }
             is UiState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(s.failure.message, color = CrColors.TextSecondary)
@@ -89,7 +92,7 @@ fun CrHomeScreen(
                             items = heroes,
                             onWatch = onWatchNow,
                             onOpen = onAnimeClick,
-                            onSearch = onSearchClick,
+                            onSearch = { showSearch = true },
                         )
                     }
                     item { CrSectionHeader("Most Popular") }
@@ -110,9 +113,18 @@ fun CrHomeScreen(
                     item {
                         CrPosterRow(items = s.data.newest, onClick = onAnimeClick)
                     }
-                    item { Spacer(Modifier.height(96.dp)) }
+                    item {
+                        LaunchedEffect(Unit) { vm.loadMore(com.anilili.ui.home.HomeSection.POPULAR) }
+                        Spacer(Modifier.height(96.dp))
+                    }
                 }
             }
+        }
+        if (showSearch) {
+            CrSearchOverlay(
+                onDismiss = { showSearch = false },
+                onAnimeClick = onAnimeClick,
+            )
         }
     }
 }
@@ -137,10 +149,12 @@ private fun CrHeroCarousel(
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
             val media = items[page]
             Box(Modifier.fillMaxSize().clickable { onOpen(media.id) }) {
+                // Crunchyroll-style: full key art (cover), not a washed-out wide banner crop.
                 AsyncImage(
-                    model = media.bannerImage ?: media.coverImage.extraLarge ?: media.coverImage.best,
+                    model = media.coverImage.extraLarge ?: media.coverImage.best ?: media.bannerImage,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
                     modifier = Modifier.fillMaxSize(),
                 )
                 Box(
@@ -197,7 +211,7 @@ private fun CrHeroCarousel(
                         Button(
                             onClick = { onWatch(media.id) },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CrColors.Orange,
+                                containerColor = CrColors.accent,
                                 contentColor = Color.Black,
                             ),
                             shape = RoundedCornerShape(28.dp),
@@ -214,10 +228,10 @@ private fun CrHeroCarousel(
                             modifier = Modifier.size(48.dp),
                             contentPadding = PaddingValues(0.dp),
                             border = ButtonDefaults.outlinedButtonBorder.copy(
-                                brush = Brush.linearGradient(listOf(CrColors.Orange, CrColors.Orange)),
+                                brush = Brush.linearGradient(listOf(CrColors.accent, CrColors.accent)),
                             ),
                         ) {
-                            Icon(Icons.Outlined.BookmarkBorder, null, tint = CrColors.Orange)
+                            Icon(Icons.Outlined.BookmarkBorder, null, tint = CrColors.accent)
                         }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -233,7 +247,7 @@ private fun CrHeroCarousel(
                                     .width(if (i == pager.currentPage) 18.dp else 10.dp)
                                     .clip(RoundedCornerShape(2.dp))
                                     .background(
-                                        if (i == pager.currentPage) CrColors.Orange
+                                        if (i == pager.currentPage) CrColors.accent
                                         else Color.White.copy(alpha = 0.35f),
                                     ),
                             )

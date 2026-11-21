@@ -81,14 +81,14 @@ fun CrMyListsScreen(
         ScrollableTabRow(
             selectedTabIndex = tab.coerceIn(0, 2),
             containerColor = CrColors.Black,
-            contentColor = CrColors.Orange,
+            contentColor = CrColors.accent,
             edgePadding = 8.dp,
             indicator = { positions ->
                 val idx = tab.coerceIn(0, positions.lastIndex.coerceAtLeast(0))
                 if (positions.isNotEmpty()) {
                     TabRowDefaults.SecondaryIndicator(
                         Modifier.tabIndicatorOffset(positions[idx]),
-                        color = CrColors.Orange,
+                        color = CrColors.accent,
                         height = 3.dp,
                     )
                 }
@@ -115,7 +115,7 @@ fun CrMyListsScreen(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            Text("Manage", color = CrColors.Orange, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("Manage", color = CrColors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
         when (tab) {
             2 -> CrHistoryGrid(history, onAnimeClick)
