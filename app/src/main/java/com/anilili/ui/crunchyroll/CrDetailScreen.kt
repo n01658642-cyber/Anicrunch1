@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -26,7 +25,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,8 +50,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.anilili.data.model.EpisodeItem
+import com.anilili.data.settings.SettingsStore
 import com.anilili.ui.UiState
+import com.anilili.ui.components.EpisodeDownloadButton
 import com.anilili.ui.detail.DetailViewModel
+import com.anilili.ui.detail.rememberSeasonDownloads
 
 @Composable
 fun CrDetailScreen(
@@ -66,6 +67,7 @@ fun CrDetailScreen(
 ) {
     val state by vm.state.collectAsState()
     val accent = CrColors.accent
+    val downloadQuality by SettingsStore.downloadQuality.collectAsState()
     LaunchedEffect(animeId) { vm.load(animeId) }
 
     Box(modifier.fillMaxSize().background(CrColors.Black)) {
@@ -81,8 +83,17 @@ fun CrDetailScreen(
                 }
             }
             is UiState.Success -> {
-                val info = s.data.info
-                val episodes = s.data.episodes
+                val data = s.data
+                val info = data.info
+                val episodes = data.episodes
+                val seasonMedia = data.seasons.firstOrNull { it.id == data.selectedSeasonId } ?: info
+                val downloads = rememberSeasonDownloads(
+                    data = data,
+                    seasonMedia = seasonMedia,
+                    shown = episodes,
+                    scopeLabel = "Episodes",
+                    loadProviderCatalog = vm::providerCatalog,
+                )
                 LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Box(Modifier.fillMaxWidth().height(280.dp)) {
@@ -154,19 +165,29 @@ fun CrDetailScreen(
                                     maxLines = 4,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text("More Details", color = accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 6.dp))
                             }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Downloads use ${downloadQuality.label} · smallest stream at that quality across servers",
+                                color = CrColors.TextMuted,
+                                fontSize = 12.sp,
+                            )
                             Spacer(Modifier.height(16.dp))
                             Text("Episodes", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
                         }
                     }
                     items(episodes, key = { it.number }) { ep ->
+                        val target = downloads.targetFor(ep)
                         CrEpisodeRow(
                             episode = ep,
                             coverFallback = info.coverImage.best,
                             accent = accent,
+                            downloadState = target.state,
+                            downloadPending = downloads.isPending(ep),
+                            onDownloadAction = { action ->
+                                downloads.onEpisodeAction(target, action)
+                            },
                             onClick = {
                                 onPlay(
                                     animeId,
@@ -217,6 +238,9 @@ private fun CrEpisodeRow(
     episode: EpisodeItem,
     coverFallback: String?,
     accent: Color,
+    downloadState: com.anilili.playback.EpisodeDownloadUi?,
+    downloadPending: Boolean,
+    onDownloadAction: (com.anilili.ui.components.EpisodeDownloadAction) -> Unit,
     onClick: () -> Unit,
 ) {
     Row(
@@ -262,5 +286,10 @@ private fun CrEpisodeRow(
                 Text("${it}m", color = CrColors.TextMuted, fontSize = 12.sp)
             }
         }
+        EpisodeDownloadButton(
+            state = downloadState,
+            pending = downloadPending,
+            onAction = onDownloadAction,
+        )
     }
 }
