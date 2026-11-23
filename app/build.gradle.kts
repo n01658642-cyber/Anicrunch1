@@ -17,8 +17,8 @@ val diagnosticBuildSha = providers.environmentVariable("GITHUB_SHA").orNull
             isIgnoreExitValue = true
         }.standardOutput.asText.get().trim()
     }.getOrDefault("unknown").ifBlank { "unknown" }
-val appVersionCode = 121
-val appVersionName = "0.2.9"
+val appVersionCode = 122
+val appVersionName = "0.2.10"
 val openSubtitlesApiKey = providers.gradleProperty("openSubtitlesApiKey").orNull
     ?: providers.environmentVariable("OPEN_SUBTITLES_API_KEY").orNull
     ?: ""
@@ -55,6 +55,14 @@ android {
     }
 
     signingConfigs {
+        // Fixed keystore so every CI/debug APK shares one signature. Ephemeral runner debug
+        // keys caused "package conflicts with an existing package" on in-app updates.
+        getByName("debug") {
+            storeFile = rootProject.file("anicrunch-ci.jks")
+            storePassword = "anicrunch_ci"
+            keyAlias = "anicrunch"
+            keyPassword = "anicrunch_ci"
+        }
         create("release") {
             val storePath = keystoreProperties.getProperty("storeFile")
             if (storePath != null) {
@@ -62,6 +70,12 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+            } else {
+                // No release keystore configured: sign like debug so GitHub APKs still update.
+                storeFile = rootProject.file("anicrunch-ci.jks")
+                storePassword = "anicrunch_ci"
+                keyAlias = "anicrunch"
+                keyPassword = "anicrunch_ci"
             }
         }
     }
@@ -69,19 +83,7 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
-            // Deliberate and permanent, despite having been labelled TEMP since v0.1.19.
-            //
-            // Debug builds carry the debug signing key and release builds the real one, and
-            // Android will not replace an installed app with one signed by a different key. Were
-            // both to share com.miruronative, putting a test build on a device that already has
-            // the release would mean uninstalling it first — taking the LibraryStore history,
-            // watchlist, downloads and saved tokens with it.
-            //
-            // So debug installs as its own app instead. The cost is that it starts empty: an
-            // install of this has no history and no watchlist, which reads as a bug in whatever
-            // feature is being tested until you remember it is a different app. Test anything
-            // that depends on real library data with a release build.
-            // applicationIdSuffix removed — was causing install conflicts with signed builds
+            signingConfig = signingConfigs.getByName("debug")
             versionNameSuffix = ""
         }
         release {
