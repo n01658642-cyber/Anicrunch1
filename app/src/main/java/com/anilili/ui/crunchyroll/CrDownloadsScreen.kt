@@ -57,7 +57,7 @@ import com.anilili.playback.OfflineSeries
 import com.anilili.playback.formatDownloadBytes
 import com.anilili.playback.offlineEpisodes
 import com.anilili.playback.offlineSeries
-import com.anilili.ui.adaptive.LocalAppChromeBottomInset
+import com.anilili.ui.components.LocalAppChromeBottomInset
 import com.anilili.ui.dialogs.MidnightConfirmDialog
 
 /**
