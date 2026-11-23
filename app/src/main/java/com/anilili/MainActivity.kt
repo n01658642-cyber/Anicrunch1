@@ -222,6 +222,7 @@ import com.anilili.ui.crunchyroll.CrMyListsScreen
 import com.anilili.ui.crunchyroll.CrDetailScreen
 import com.anilili.ui.crunchyroll.CrBrowseScreen
 import com.anilili.ui.crunchyroll.CrHomeScreen
+import com.anilili.ui.crunchyroll.CrDownloadsScreen
 import com.anilili.errors.AnililiError
 import com.anilili.errors.report
 import com.anilili.ui.nav.AnililiLink
@@ -1940,9 +1941,15 @@ private fun AppNavHost(
             composable(Routes.DOWNLOADS) {
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route DOWNLOADS content entered") }
                 TvTopNavigationInset {
-                    DownloadsScreen(
-                        onPlayDownload = { downloadId -> nav.navigate(Routes.download(downloadId)) },
-                    )
+                    if (crShell) {
+                        CrDownloadsScreen(
+                            onPlayDownload = { downloadId -> nav.navigate(Routes.download(downloadId)) },
+                        )
+                    } else {
+                        DownloadsScreen(
+                            onPlayDownload = { downloadId -> nav.navigate(Routes.download(downloadId)) },
+                        )
+                    }
                 }
             }
             composable(Routes.SETTINGS) {
