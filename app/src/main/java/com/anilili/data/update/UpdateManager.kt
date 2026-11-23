@@ -324,19 +324,10 @@ object UpdateManager {
      * could only ever fail, and asking it first is what made every check pay for a doomed request.
      */
     private fun fetchLatest(): UpdateInfo =
-        runCatching { GitHubUpdateSource.fetchManifest(AppGraph.httpClient, json) }
-            .getOrElse { githubError ->
-                DiagnosticsLog.throwable("GitHub releases failed; falling back to Nostr", githubError)
-                runCatching { NostrUpdateSource.fetchManifestFromMirror(AppGraph.httpClient, json) }
-                    .getOrElse { mirrorError ->
-                        DiagnosticsLog.throwable("Manifest mirror failed; falling back to Nostr relays", mirrorError)
-                        runCatching { NostrUpdateSource.fetchManifest(AppGraph.httpClient, json) }
-                            .getOrElse { nostrError ->
-                                DiagnosticsLog.throwable("Nostr relays also failed", nostrError)
-                                throw githubError
-                            }
-                    }
-            }
+        // GitHub Releases only for this fork (Anicrunch1). Nostr carries the original Anilili
+        // channel and can report an older 0.1.x as "latest", which made Check for updates claim
+        // the install was already newer. Same path as stock Anilili's single-channel check.
+        GitHubUpdateSource.fetchManifest(AppGraph.httpClient, json)
 
     private fun downloadApk(context: Context, info: UpdateInfo): File {
         val policy = updateInstallerPolicy(Build.VERSION.SDK_INT)
@@ -543,13 +534,12 @@ internal fun updateOffer(
     installedVersion: String,
     installedBuild: Int,
 ): UpdateOffer {
+    // versionCode is authoritative when present (same as Android's install gate).
+    if (remoteBuild != null && remoteBuild > installedBuild) return UpdateOffer.PROMPT
+    if (remoteBuild != null && remoteBuild < installedBuild) return UpdateOffer.NONE
     val names = compareAppVersions(remoteVersion, installedVersion)
-    // A higher version *name* always wins (0.1.97 > 0.1.96), regardless of any botched build field.
     if (names > 0) return UpdateOffer.PROMPT
     if (names < 0) return UpdateOffer.NONE
-    // Same version name: only then compare versionCode-style build numbers.
-    if (remoteBuild != null && remoteBuild > installedBuild) return UpdateOffer.QUIET
-    if (remoteBuild != null && remoteBuild < installedBuild) return UpdateOffer.NONE
     return UpdateOffer.NONE
 }
 

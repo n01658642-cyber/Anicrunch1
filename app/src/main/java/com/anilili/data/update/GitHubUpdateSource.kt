@@ -13,22 +13,20 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Primary update channel for this fork: public GitHub Releases on
- * n01658642-cyber/Anicrunch1. "Check for updates" in Settings hits latest release
- * and picks an APK asset (prefer arm64, then universal).
+ * Primary (and only) update channel for this fork: public GitHub Releases on
+ * n01658642-cyber/Anicrunch1 — same “check → dialog → download → install” flow as stock Anilili.
  */
 object GitHubUpdateSource {
     private val SEMVER = Regex("""\b(\d+\.\d+\.\d+)\b""")
-    /** First 0.1.95-style version found in release metadata. */
+    private val TAG_SEMVER = Regex("""^v?(\d+\.\d+\.\d+)\b""")
+
     internal fun extractSemver(vararg texts: String): String? {
+        for (text in texts) {
+            TAG_SEMVER.find(text.trim())?.groupValues?.getOrNull(1)?.let { return it }
+        }
         for (text in texts) {
             SEMVER.find(text)?.groupValues?.getOrNull(1)?.let { return it }
         }
-        // v-something-095 → 0.1.95 when our versionCode scheme is 0.1.N
-        val tag = texts.lastOrNull().orEmpty()
-        Regex("""(?:^|-)(0?\d{1,3})$""").find(tag.removePrefix("v"))?.groupValues?.getOrNull(1)
-            ?.toIntOrNull()
-            ?.let { n -> if (n in 1..999) return "0.1.$n" }
         return null
     }
 
@@ -91,19 +89,17 @@ object GitHubUpdateSource {
         val chosen = list.sortedBy(::score).first()
         val mirrors = list.filter { it.url != chosen.url }.map { it.url }
 
-        // Prefer a real semver (0.1.95) from release name/body/tag. Tags like
-        // "v-stills-all-series-095" must NOT become the version string — compareAppVersions
-        // then treats them as 0.0.0 and claims the install is already newer.
-        val version = extractSemver(name, notes, tag)
+        // Tag first (v0.2.7), then name/notes — never invent a version from unrelated digits.
+        val version = extractSemver(tag, name, notes)
             ?: tag.removePrefix("v").ifBlank { name.ifBlank { tag } }
-        // NEVER scrape "97" out of "0.1.97" — that was compared to versionCode 108 and
-        // blocked every update ("already newer" while 0.1.97 was published).
-        // Only accept an explicit versionCode=123 in the release body.
+
+        // versionCode from release notes (required for quiet rebuilds of the same name).
         val build = Regex("""versionCode\s*[=:]\s*(\d+)""", RegexOption.IGNORE_CASE)
             .find(notes)
             ?.groupValues
             ?.getOrNull(1)
             ?.toIntOrNull()
+
         DiagnosticsLog.event("GitHub update: tag=$tag version=$version build=$build asset=${chosen.name}")
         return UpdateManager.UpdateInfo(
             version = version,

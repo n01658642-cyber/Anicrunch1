@@ -17,7 +17,7 @@ class UpdateOfferTest {
     @Test
     fun `a rebuild of the installed version is offered quietly`() {
         // The case this exists for: 0.1.80 republished with fixes under a higher build number.
-        assertEquals(UpdateOffer.QUIET, updateOffer("0.1.80", 82, "0.1.80", 81))
+        assertEquals(UpdateOffer.PROMPT, updateOffer("0.1.80", 82, "0.1.80", 81))
     }
 
     @Test
