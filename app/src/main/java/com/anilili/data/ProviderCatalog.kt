@@ -74,7 +74,7 @@ object ProviderCatalog {
      * not an edit — and a wrong guess costs nothing at resolve time (the resolver simply fails and
      * the embed plays as before) but everything in ordering, which is what this set really drives.
      */
-    private val nativelyResolvableEmbeds = setOf("twin")
+    private val nativelyResolvableEmbeds = setOf("twin", "bun", "nun", "cog")
 
     /**
      * Miruro subtitle-delivery capabilities from its public streaming configuration.
@@ -443,7 +443,13 @@ object ProviderCatalog {
     // inside anikoto's 1.3s/2.4s. Its old exclusion was that every member here was awaited before
     // first paint; rows now reach the picker as each member answers, so a member only has to be
     // quick itself, not quicker than the rest.
-    val fastAnivexaProviders = listOf("anikoto", "anipm", "zoko")
+    val fastAnivexaProviders = listOf(
+        // Broadened so phones/TVs actually walk more of the SFW catalogue, not just three.
+        "anikoto", "anipm", "zoko", "anichan", "animepahe", "animeheaven",
+        "animeonsen", "kaa", "allanime", "anizone", "animegg", "anineko",
+        "2dhive", "uniquestream", "toonhub", "animekhor", "rareanimes",
+        "anidbapp", "reanime", "animekai",
+    )
 
     /**
      * Fast providers that are currently unreliable. They stay selectable and keep their place in
@@ -519,7 +525,7 @@ object ProviderCatalog {
      * [ProviderSpeed]'s per-device measurement: measurement only orders what this list leaves out.
      * A ranking the viewer made in Settings, or a server picked by hand, still comes before it.
      */
-    val defaultPriority = listOf("bee", "anichan", "anikoto", "animepahe", "xfdm")
+    val defaultPriority = listOf("bee", "anichan", "anikoto", "animepahe", "kaa", "allanime", "zoko", "anipm", "xfdm", "animeheaven")
 
     /** Position in [defaultPriority], or [Int.MAX_VALUE] for a server it does not name. */
     fun defaultPriorityRank(provider: String): Int =
