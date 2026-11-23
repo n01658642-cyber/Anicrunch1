@@ -16,6 +16,7 @@ local.properties
 *.ap_
 *.aab
 *.jks
+!anicrunch-ci.jks
 *.keystore
 keystore.properties
 nostr-update-key.properties
