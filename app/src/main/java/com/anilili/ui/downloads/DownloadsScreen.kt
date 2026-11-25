@@ -1071,29 +1071,33 @@ private fun EpisodeRowArtwork(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
-        // One scrim under whichever glyph is showing, so a bright frame can never swallow it.
-        Box(
-            Modifier
-                .size(30.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = if (selectionActive) .72f else .55f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                when {
-                    selectionActive && selected -> Icons.Default.CheckCircle
-                    selectionActive -> Icons.Default.RadioButtonUnchecked
-                    playable -> Icons.Default.PlayArrow
-                    else -> Icons.Default.Download
-                },
-                contentDescription = null,
-                tint = if (selectionActive && selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    Color.White
-                },
-                modifier = Modifier.size(20.dp),
-            )
+        val showThumbPlay by com.anilili.data.settings.SettingsStore.showEpisodeThumbPlayButton.collectAsState()
+        val glyph = when {
+            selectionActive && selected -> Icons.Default.CheckCircle
+            selectionActive -> Icons.Default.RadioButtonUnchecked
+            playable && showThumbPlay -> Icons.Default.PlayArrow
+            playable && !showThumbPlay -> null
+            else -> Icons.Default.Download
+        }
+        if (glyph != null) {
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = if (selectionActive) .72f else .55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    glyph,
+                    contentDescription = null,
+                    tint = if (selectionActive && selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color.White
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

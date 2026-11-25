@@ -399,6 +399,7 @@ fun SettingsScreen(
     val dohProvider by SettingsStore.dohProvider.collectAsState()
     val downloadQuality by SettingsStore.downloadQuality.collectAsState()
     val parallelDownloads by SettingsStore.parallelDownloads.collectAsState()
+    val showEpisodeThumbPlayButton by SettingsStore.showEpisodeThumbPlayButton.collectAsState()
     val downloadDestination by SettingsStore.downloadDestination.collectAsState()
     val releaseNotifications by SettingsStore.releaseNotifications.collectAsState()
     val announcements by SettingsStore.announcements.collectAsState()
@@ -2400,6 +2401,31 @@ fun SettingsScreen(
                         description = "Download up to 2 episodes at the same time (uses more data and may hit rate limits)",
                         checked = parallelDownloads,
                         onCheckedChange = { SettingsStore.setParallelDownloads(it) },
+                    )
+                }
+                item(key = "Play button on episode thumbnails") {
+                    MidnightSettingSwitchRow(
+                        title = "Play button on episode thumbnails",
+                        description = "Show the circular play icon over offline episode stills",
+                        checked = showEpisodeThumbPlayButton,
+                        onCheckedChange = SettingsStore::setShowEpisodeThumbPlayButton,
+                    )
+                }
+                item(key = "Clear update leftovers") {
+                    MidnightSettingRow(
+                        title = "Clear update leftovers",
+                        description = "Delete cached update APKs that are no longer needed",
+                        onClick = {
+                            val freed = com.anilili.data.update.UpdateManager.cleanupUpdateArtifacts(context)
+                            val msg = if (freed <= 0L) "Nothing to clear"
+                            else if (freed >= 1024L * 1024) "Freed %.1f MB".format(freed / (1024.0 * 1024))
+                            else "Freed %.1f KB".format(freed / 1024.0)
+                            android.widget.Toast.makeText(
+                                context,
+                                msg,
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        },
                     )
                 }
                 item(key = "Download resolution") {

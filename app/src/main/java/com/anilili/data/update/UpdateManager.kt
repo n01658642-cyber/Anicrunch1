@@ -299,6 +299,12 @@ object UpdateManager {
             DiagnosticsLog.event(
                 "Update installer launched version=${ready.update.version} bytes=${ready.file.length()}",
             )
+            // Keep the APK the installer is reading; clear older siblings and other leftovers.
+            runCatching {
+                ready.file.parentFile?.listFiles()?.forEach { f ->
+                    if (f != ready.file && f.isFile) f.delete()
+                }
+            }
         }.onFailure { error ->
             _state.value = State.Failed(
                 AnililiError.UPDATE_INSTALLER_MISSING.report(
@@ -329,7 +335,53 @@ object UpdateManager {
         // the install was already newer. Same path as stock Anilili's single-channel check.
         GitHubUpdateSource.fetchManifest(AppGraph.httpClient, json)
 
+
+    /**
+     * Deletes leftover update APKs from cache folders (and matching Anime/Anicrunch APKs in
+     * public Downloads). Safe to call before/after an install; returns bytes removed.
+     */
+    fun cleanupUpdateArtifacts(context: Context): Long {
+        var freed = 0L
+        val roots = listOfNotNull(context.cacheDir, context.externalCacheDir, context.filesDir)
+        for (root in roots) {
+            val updates = File(root, "updates")
+            if (updates.isDirectory) {
+                updates.listFiles()?.forEach { f ->
+                    if (f.isFile) {
+                        val n = f.length()
+                        if (f.delete()) freed += n
+                    }
+                }
+            }
+            root.listFiles()?.forEach { f ->
+                if (f.isFile && f.name.endsWith(".apk", ignoreCase = true) &&
+                    f.name.contains(Regex("(?i)anime|anilili|anicrunch|update"))
+                ) {
+                    val n = f.length()
+                    if (f.delete()) freed += n
+                }
+            }
+        }
+        runCatching {
+            val publicDl = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS,
+            )
+            publicDl?.listFiles()?.forEach { f ->
+                if (f.isFile && f.name.endsWith(".apk", ignoreCase = true) &&
+                    f.name.contains(Regex("(?i)^(Anime|Anilili|Anicrunch|Anime-debug)"))
+                ) {
+                    val n = f.length()
+                    if (f.delete()) freed += n
+                }
+            }
+        }
+        DiagnosticsLog.event("Update artifacts cleanup freedBytes=$freed")
+        return freed
+    }
+
     private fun downloadApk(context: Context, info: UpdateInfo): File {
+        // Drop prior update APKs / leftover installer files before fetching a new one.
+        runCatching { cleanupUpdateArtifacts(context) }
         val policy = updateInstallerPolicy(Build.VERSION.SDK_INT)
         // Raised rather than returned so the failure keeps UPD-04 all the way out through the
         // download's catch: "couldn't make room" and "the download stopped halfway" ask different

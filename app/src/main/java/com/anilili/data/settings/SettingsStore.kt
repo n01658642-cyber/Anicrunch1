@@ -770,6 +770,10 @@ object SettingsStore {
     private val _preferDub = MutableStateFlow(false)
     val preferDub = _preferDub.asStateFlow()
 
+    /** Play icon drawn on episode thumbnail cards (downloads / offline lists). */
+    private val _showEpisodeThumbPlayButton = MutableStateFlow(true)
+    val showEpisodeThumbPlayButton = _showEpisodeThumbPlayButton.asStateFlow()
+
     private val _releaseNotifications = MutableStateFlow(true)
     val releaseNotifications = _releaseNotifications.asStateFlow()
 
@@ -1340,6 +1344,9 @@ object SettingsStore {
     fun setPauseDetailsOverlay(value: Boolean) = save(PAUSE_DETAILS_OVERLAY, value, _pauseDetailsOverlay)
     fun setAutoSyncAniList(value: Boolean) = save(AUTO_SYNC, value, _autoSyncAniList)
     fun setPreferDub(value: Boolean) = save(PREFER_DUB, value, _preferDub)
+
+    fun setShowEpisodeThumbPlayButton(value: Boolean) =
+        save(SHOW_EPISODE_THUMB_PLAY_BUTTON, value, _showEpisodeThumbPlayButton)
     fun setReleaseNotifications(value: Boolean) = save(RELEASE_NOTIFICATIONS, value, _releaseNotifications)
     fun setAnnouncements(value: Boolean) = save(ANNOUNCEMENTS, value, _announcements)
     fun setSyncSavedToAniList(value: Boolean) = save(SYNC_SAVED_TO_ANILIST, value, _syncSavedToAniList)
@@ -2049,6 +2056,7 @@ object SettingsStore {
         _pauseDetailsOverlay.value = prefs[PAUSE_DETAILS_OVERLAY] ?: true
         _autoSyncAniList.value = prefs[AUTO_SYNC] ?: true
         _preferDub.value = prefs[PREFER_DUB] ?: false
+        _showEpisodeThumbPlayButton.value = prefs[SHOW_EPISODE_THUMB_PLAY_BUTTON] ?: true
         _releaseNotifications.value = prefs[RELEASE_NOTIFICATIONS] ?: true
         _announcements.value = prefs[ANNOUNCEMENTS] ?: true
         _syncSavedToAniList.value = prefs[SYNC_SAVED_TO_ANILIST] ?: true
@@ -2218,6 +2226,7 @@ object SettingsStore {
     private val PAUSE_DETAILS_OVERLAY = booleanPreferencesKey("pause_details_overlay")
     private val AUTO_SYNC = booleanPreferencesKey("auto_sync_anilist")
     private val PREFER_DUB = booleanPreferencesKey("prefer_dub")
+    private val SHOW_EPISODE_THUMB_PLAY_BUTTON = booleanPreferencesKey("show_episode_thumb_play_button")
     private val RELEASE_NOTIFICATIONS = booleanPreferencesKey("release_notifications")
     private val ANNOUNCEMENTS = booleanPreferencesKey("announcements")
     private val SYNC_SAVED_TO_ANILIST = booleanPreferencesKey("sync_saved_to_anilist")

@@ -55,6 +55,7 @@ import com.anilili.playback.EpisodeDownloads
 import com.anilili.playback.OfflineEpisode
 import com.anilili.playback.OfflineSeries
 import com.anilili.playback.formatDownloadBytes
+import com.anilili.data.settings.SettingsStore
 import com.anilili.playback.offlineEpisodes
 import com.anilili.playback.offlineSeries
 import com.anilili.ui.components.LocalAppChromeBottomInset
@@ -355,7 +356,8 @@ private fun CrOfflineEpisodeRow(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-            if (episode.isPlayable) {
+            val showPlay by SettingsStore.showEpisodeThumbPlayButton.collectAsState()
+            if (episode.isPlayable && showPlay) {
                 Box(
                     Modifier
                         .align(Alignment.Center)
