@@ -314,7 +314,7 @@ private fun CrPosterRow(items: List<Media>, onClick: (Int) -> Unit) {
                     fontWeight = FontWeight.Medium,
                 )
                 val audio = buildString {
-                    if (media.averageScore != null) append("★ ${media.averageScore}%")
+                    if (media.averageScore != null) append(String.format("★ %.1f", media.averageScore / 10.0))
                 }
                 if (audio.isNotEmpty()) {
                     Text(audio, color = CrColors.TextMuted, fontSize = 11.sp, maxLines = 1)

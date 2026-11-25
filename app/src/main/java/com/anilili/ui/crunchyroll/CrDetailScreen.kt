@@ -1,5 +1,15 @@
 package com.anilili.ui.crunchyroll
 
+import androidx.compose.material.icons.filled.PlayCircle
+
+import android.widget.Toast
+
+import androidx.compose.ui.platform.LocalContext
+
+import android.net.Uri
+
+import android.content.Intent
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +35,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -135,20 +144,94 @@ fun CrDetailScreen(
                                 Text(genres, color = CrColors.TextSecondary, fontSize = 13.sp)
                             }
                             Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Star, null, tint = accent, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    info.averageScore?.let { "Average: ${it / 10.0}" } ?: "—",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                )
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
                                 CrAction(Icons.Outlined.Add, "My List") {}
                                 CrAction(Icons.Default.Share, "Share") {}
-                                CrAction(Icons.Outlined.MenuBook, "Manga") {}
+                            }
+                            Spacer(Modifier.height(14.dp))
+                            // Score row — AniList average + popularity when available
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                info.averageScore?.let { score ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Star, null, tint = accent, modifier = Modifier.size(20.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            String.format("%.1f", score / 10.0),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 18.sp,
+                                        )
+                                        Text(" / 10", color = CrColors.TextMuted, fontSize = 13.sp)
+                                    }
+                                }
+                                info.popularity?.let { pop ->
+                                    Text(
+                                        "%,d popular".format(pop),
+                                        color = CrColors.TextSecondary,
+                                        fontSize = 13.sp,
+                                    )
+                                }
+                                info.meanScore?.let { mean ->
+                                    if (info.averageScore == null) {
+                                        Text("Mean $mean%", color = CrColors.TextSecondary, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                            // Trailer
+                            val trailer = info.trailer
+                            val trailerUrl = trailer?.watchUrl
+                            if (trailerUrl != null) {
+                                Spacer(Modifier.height(14.dp))
+                                val context = LocalContext.current
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(CrColors.Card)
+                                        .clickable {
+                                            runCatching {
+                                                context.startActivity(
+                                                    Intent(Intent.ACTION_VIEW, Uri.parse(trailerUrl)),
+                                                )
+                                            }.onFailure {
+                                                Toast.makeText(context, "No app can play the trailer.", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Box(
+                                        Modifier
+                                            .width(140.dp)
+                                            .aspectRatio(16f / 9f)
+                                            .clip(RoundedCornerShape(6.dp)),
+                                    ) {
+                                        AsyncImage(
+                                            model = trailer?.thumbnail,
+                                            contentDescription = "Trailer",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                        Box(
+                                            Modifier
+                                                .align(Alignment.Center)
+                                                .size(36.dp)
+                                                .background(Color.Black.copy(0.55f), CircleShape),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, null, tint = Color.White)
+                                        }
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column {
+                                        Text("Trailer", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                        Text("Watch on YouTube", color = CrColors.TextMuted, fontSize = 12.sp)
+                                    }
+                                }
                             }
                             Spacer(Modifier.height(12.dp))
                             val plain = remember(info.description) {

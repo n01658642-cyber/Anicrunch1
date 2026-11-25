@@ -222,7 +222,7 @@ class MiruroApp : Application(), ImageLoaderFactory {
                 .maxSizeBytes(imageDiskCacheBytes())
                 .build()
         }
-        .crossfade(150)
+        .crossfade(80)
         .respectCacheHeaders(false)
         .build()
 

@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -286,7 +287,7 @@ fun HomeScreen(
     // first version of this had the mark landing on One Piece's sky with a score badge showing
     // through it. Held here rather than inside the bar because the list it watches lives further
     // down the tree than the scaffold slot that draws it.
-    val homeListState = rememberLazyListState()
+    val homeListState = rememberLazyListState(prefetchStrategy = remember { LazyListPrefetchStrategy(4) })
     val hasSpotlight = (state as? UiState.Success)?.data?.spotlight?.isNotEmpty() == true
     // What the header and its genre pills frost: the feed that scrolls under them. Null with Home's
     // glass switched off, which takes the recording away along with the blur.
@@ -1441,12 +1442,16 @@ private fun MediaRail(
                 }
             }
         } else {
+            val railState = rememberLazyListState(
+                prefetchStrategy = remember { LazyListPrefetchStrategy(6) },
+            )
             LazyRow(
+                state = railState,
                 modifier = Modifier.focusGroup(),
                 contentPadding = PaddingValues(horizontal = device.pagePadding, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(if (device.isTv) 18.dp else 10.dp),
             ) {
-                items(media, key = { it.id }) { item ->
+                items(media, key = { it.id }, contentType = { "poster" }) { item ->
                     AnimeCard(
                         media = item,
                         onClick = { onAnimeClick(item.id) },
