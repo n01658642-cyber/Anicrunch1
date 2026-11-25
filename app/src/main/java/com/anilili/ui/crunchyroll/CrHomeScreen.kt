@@ -55,6 +55,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.statusBarsPadding
+import com.anilili.data.library.HistoryEntry
+import com.anilili.data.library.LibraryStore
 import com.anilili.data.model.Media
 import com.anilili.ui.UiState
 import com.anilili.ui.home.HomeViewModel
@@ -66,11 +69,18 @@ fun CrHomeScreen(
     onAnimeClick: (Int) -> Unit,
     onWatchNow: (Int) -> Unit,
     onSearchClick: () -> Unit,
+    onResume: (HistoryEntry) -> Unit = {},
     modifier: Modifier = Modifier,
     vm: HomeViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsState()
     val personal by vm.personal.collectAsState()
+    val history by LibraryStore.history.collectAsState()
+    val continueWatching = remember(history) {
+        history.filter { it.positionMs > 0 || it.episodeNumber > 0 }
+            .sortedByDescending { it.updatedAt }
+            .take(20)
+    }
     var showSearch by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.load(); vm.loadPersonal() }
 
@@ -94,6 +104,16 @@ fun CrHomeScreen(
                             onOpen = onAnimeClick,
                             onSearch = { showSearch = true },
                         )
+                    }
+                    if (continueWatching.isNotEmpty()) {
+                        item { CrSectionHeader("Continue Watching") }
+                        item {
+                            CrContinueRow(
+                                entries = continueWatching,
+                                onResume = onResume,
+                                onOpen = onAnimeClick,
+                            )
+                        }
                     }
                     item { CrSectionHeader("Most Popular") }
                     item {
@@ -259,7 +279,8 @@ private fun CrHeroCarousel(
         Row(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 12.dp, end = 8.dp),
+                .statusBarsPadding()
+                .padding(top = 4.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { }) {
@@ -319,6 +340,93 @@ private fun CrPosterRow(items: List<Media>, onClick: (Int) -> Unit) {
                 if (audio.isNotEmpty()) {
                     Text(audio, color = CrColors.TextMuted, fontSize = 11.sp, maxLines = 1)
                 }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun CrContinueRow(
+    entries: List<HistoryEntry>,
+    onResume: (HistoryEntry) -> Unit,
+    onOpen: (Int) -> Unit,
+) {
+    val accent = CrColors.accent
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(entries, key = { it.anilistId }) { entry ->
+            val watched = entry.progressFraction >= 0.9f
+            val ep = if (entry.episodeNumber % 1.0 == 0.0) {
+                "EP ${entry.episodeNumber.toInt()}"
+            } else {
+                "EP ${entry.episodeNumber}"
+            }
+            Column(
+                Modifier
+                    .width(160.dp)
+                    .clickable { onResume(entry) },
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(6.dp)),
+                ) {
+                    AsyncImage(
+                        model = entry.cover,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Box(
+                        Modifier
+                            .align(Alignment.Center)
+                            .size(36.dp)
+                            .background(Color.Black.copy(0.55f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                    }
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth()
+                            .height(3.dp)
+                            .background(Color.White.copy(0.25f)),
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth(if (watched) 1f else entry.progressFraction.coerceIn(0f, 1f))
+                                .height(3.dp)
+                                .background(accent),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    entry.title,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    buildString {
+                        append(ep)
+                        if (entry.progressFraction > 0f && !watched) {
+                            append(" · ${(entry.progressFraction * 100).toInt()}%")
+                        } else if (watched) {
+                            append(" · Watched")
+                        }
+                    },
+                    color = CrColors.TextMuted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                )
             }
         }
     }

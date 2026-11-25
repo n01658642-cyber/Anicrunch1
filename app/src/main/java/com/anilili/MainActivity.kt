@@ -1836,7 +1836,10 @@ private fun AppNavHost(
                             if (saved != null) nav.navigate(resumeRoute(context, id, saved.provider, saved.category, saved.episodeLabel))
                             else nav.navigate(resumeRoute(context, id, "auto", if (com.anilili.data.settings.SettingsStore.preferDub.value) "dub" else "sub", "1"))
                         },
-                        onSearchClick = { nav.navigateTab(Routes.SEARCH) },
+                        onSearchClick = { /* search overlay is internal to CrHome */ },
+                        onResume = { e ->
+                            nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel))
+                        },
                     )
                 } else {
                     HomeScreen(
@@ -1937,8 +1940,10 @@ private fun AppNavHost(
                             onSearchClick = { nav.navigateTab(Routes.SEARCH) },
                             onOpenDownloads = { nav.navigateTab(Routes.DOWNLOADS) },
                             onOpenSchedule = {
-                                // Classic airing schedule — not the Simulcasts seasonal archive.
                                 nav.navigate("schedule_airing")
+                            },
+                            onResumeHistory = { e ->
+                                nav.navigate(resumeRoute(context, e.anilistId, e.provider, e.category, e.episodeLabel))
                             },
                         )
                     } else {
