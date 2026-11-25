@@ -61,6 +61,8 @@ private data class PendingDownload(
     val anilistId: Int,
     val seriesTitle: String,
     val artworkUrl: String?,
+    /** Series/season poster locked for library cards; independent of episode stills. */
+    val seriesArtworkUrl: String? = null,
     val category: Category,
     val preferredProvider: String,
     /**
@@ -192,6 +194,7 @@ object BulkEpisodeDownloads {
         anilistId: Int,
         seriesTitle: String,
         artworkUrl: String?,
+        seriesArtworkUrl: String? = null,
         category: Category,
         preferredProvider: String,
         variant: SourceVariant = SourceVariant.defaultFor(category),
@@ -206,6 +209,7 @@ object BulkEpisodeDownloads {
             anilistId = anilistId,
             seriesTitle = seriesTitle,
             artworkUrl = artworkUrl,
+            seriesArtworkUrl = seriesArtworkUrl ?: artworkUrl,
             category = category,
             preferredProvider = preferredProvider,
             variant = variant,
@@ -293,6 +297,7 @@ object BulkEpisodeDownloads {
                 anilistId = metadata.anilistId,
                 seriesTitle = metadata.seriesTitle,
                 artworkUrl = metadata.artworkUrl,
+                seriesArtworkUrl = metadata.seriesArtworkUrl ?: metadata.artworkUrl,
                 category = category,
                 preferredProvider = preferredProvider ?: SettingsStore.preferredProvider.value,
                 // A re-queue is the same request on a different server, so it keeps the subtitle
@@ -364,6 +369,7 @@ object BulkEpisodeDownloads {
                 anilistId = anilistId,
                 seriesTitle = seriesTitle,
                 artworkUrl = artworkUrl,
+                seriesArtworkUrl = artworkUrl,
                 category = category,
                 preferredProvider = preferredProvider,
                 variant = variant,
@@ -677,7 +683,7 @@ object BulkEpisodeDownloads {
                     episodeTitle = item.episode.title,
                     filler = item.episode.filler,
                     artworkUrl = item.episode.image?.takeIf { it.isNotBlank() } ?: item.artworkUrl,
-                    seriesArtworkUrl = item.artworkUrl,
+                    seriesArtworkUrl = item.seriesArtworkUrl?.takeIf { it.isNotBlank() } ?: item.artworkUrl,
                     provider = resolved.provider,
                     category = item.category.api,
                     // What the server actually answered with, which may not be what was asked for:

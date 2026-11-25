@@ -162,6 +162,7 @@ internal fun rememberSeasonDownloads(
                 anilistId = seasonId,
                 seriesTitle = seasonMedia.title.preferred,
                 artworkUrl = episode.image?.takeIf { it.isNotBlank() } ?: seasonMedia.coverImage.best,
+                seriesArtworkUrl = seasonMedia.coverImage.best ?: seasonMedia.bannerImage,
                 category = downloadCategory,
                 preferredProvider = preferredProvider,
                 variant = effectiveDownloadVariant(

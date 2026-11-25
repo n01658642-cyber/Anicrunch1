@@ -223,6 +223,7 @@ import com.anilili.ui.crunchyroll.CrDetailScreen
 import com.anilili.ui.crunchyroll.CrBrowseScreen
 import com.anilili.ui.crunchyroll.CrHomeScreen
 import com.anilili.ui.crunchyroll.CrDownloadsScreen
+import com.anilili.ui.crunchyroll.CrSimulcastsScreen
 import com.anilili.errors.AnililiError
 import com.anilili.errors.report
 import com.anilili.ui.nav.AnililiLink
@@ -1912,6 +1913,18 @@ private fun AppNavHost(
             composable(Routes.SCHEDULE) {
                 LaunchedEffect(Unit) { DiagnosticsLog.event("Route SCHEDULE content entered") }
                 TvTopNavigationInset {
+                    if (crShell) {
+                        CrSimulcastsScreen(
+                            onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
+                        )
+                    } else {
+                        ScheduleScreen(onAnimeClick = { id -> nav.navigate(Routes.detail(id)) })
+                    }
+                }
+            }
+            composable("schedule_airing") {
+                LaunchedEffect(Unit) { DiagnosticsLog.event("Route schedule_airing entered") }
+                TvTopNavigationInset {
                     ScheduleScreen(onAnimeClick = { id -> nav.navigate(Routes.detail(id)) })
                 }
             }
@@ -1923,6 +1936,10 @@ private fun AppNavHost(
                             onAnimeClick = { id -> nav.navigate(Routes.detail(id)) },
                             onSearchClick = { nav.navigateTab(Routes.SEARCH) },
                             onOpenDownloads = { nav.navigateTab(Routes.DOWNLOADS) },
+                            onOpenSchedule = {
+                                // Classic airing schedule — not the Simulcasts seasonal archive.
+                                nav.navigate("schedule_airing")
+                            },
                         )
                     } else {
                         ProfileScreen(

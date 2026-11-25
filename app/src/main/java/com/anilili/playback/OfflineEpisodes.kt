@@ -105,8 +105,10 @@ fun offlineSeries(episodes: List<OfflineEpisode>): List<OfflineSeries> =
             OfflineSeries(
                 anilistId = anilistId,
                 title = newest.metadata.seriesTitle,
-                artworkUrl = group.firstNotNullOfOrNull { it.metadata.seriesArtworkUrl }
-                    ?: group.firstNotNullOfOrNull { it.metadata.artworkUrl },
+                // Always prefer the series/season poster — never let an episode still replace the cover.
+                artworkUrl = group.mapNotNull { it.metadata.seriesArtworkUrl?.takeIf(String::isNotBlank) }
+                    .firstOrNull()
+                    ?: group.mapNotNull { it.metadata.artworkUrl?.takeIf(String::isNotBlank) }.firstOrNull(),
                 episodes = sorted,
             )
         }

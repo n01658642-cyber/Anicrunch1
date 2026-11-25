@@ -52,12 +52,13 @@ fun CrMyListsScreen(
     onAnimeClick: (Int) -> Unit,
     onSearchClick: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenSchedule: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val watchlist by LibraryStore.watchlist.collectAsState()
     val history by LibraryStore.history.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Watchlist", "Crunchylists", "History", "Downloads")
+    val tabs = listOf("Watchlist", "History", "Schedule", "Downloads")
 
     Column(modifier.fillMaxSize().background(CrColors.Black)) {
         Row(
@@ -79,7 +80,7 @@ fun CrMyListsScreen(
             }
         }
         ScrollableTabRow(
-            selectedTabIndex = tab.coerceIn(0, 2),
+            selectedTabIndex = tab.coerceIn(0, tabs.lastIndex),
             containerColor = CrColors.Black,
             contentColor = CrColors.accent,
             edgePadding = 8.dp,
@@ -99,7 +100,11 @@ fun CrMyListsScreen(
                 Tab(
                     selected = tab == i,
                     onClick = {
-                        if (i == 3) onOpenDownloads() else tab = i
+                        when (i) {
+                            2 -> onOpenSchedule()
+                            3 -> onOpenDownloads()
+                            else -> tab = i
+                        }
                     },
                     text = {
                         Text(
@@ -118,10 +123,7 @@ fun CrMyListsScreen(
             Text("Manage", color = CrColors.accent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
         }
         when (tab) {
-            2 -> CrHistoryGrid(history, onAnimeClick)
-            1 -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Custom lists coming soon", color = CrColors.TextSecondary)
-            }
+            1 -> CrHistoryGrid(history, onAnimeClick)
             else -> CrWatchlistGrid(watchlist, onAnimeClick)
         }
     }

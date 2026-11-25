@@ -214,7 +214,7 @@ private fun CrDownloadSeriesTile(
                     ),
             )
             Text(
-                "${series.playableCount} ep",
+                "${series.episodes.size} ep",
                 color = Color.White,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
