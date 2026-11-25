@@ -103,9 +103,10 @@ internal fun rememberSeasonDownloads(
         episodeDownloadBadges(downloadIndex, exportStatuses, exportedEpisodes)
     }
 
-    // Everything the resolver needs is season-scoped, because a download belongs to the season
-    // whose row was pressed rather than to the page it was pressed on.
-    val downloadCategory = data.preferredCategory
+    // Prefer the live Settings toggle so a change to "Prefer dubbed" applies on the next tap
+    // without reopening the series. DetailData.preferredCategory is only a load-time snapshot.
+    val preferDub by SettingsStore.preferDub.collectAsState()
+    val downloadCategory = if (preferDub) Category.DUB else Category.SUB
     val preferredProvider by SettingsStore.preferredProvider.collectAsState()
     val downloadQuality by SettingsStore.downloadQuality.collectAsState()
     val hardSubsOnly by SettingsStore.downloadHardSubsOnly.collectAsState()

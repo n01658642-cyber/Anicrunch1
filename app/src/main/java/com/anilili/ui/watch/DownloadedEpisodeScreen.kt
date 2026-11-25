@@ -589,7 +589,13 @@ fun DownloadedEpisodeScreen(
                     }.getOrDefault(emptyMap())
                 }
                 if (splitLayout) {
-                    Column(Modifier.fillMaxSize().background(Color.Black)) {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .statusBarsPadding(),
+                    ) {
+                        // Video sits below the status bar at a true 16:9, not under the clock/icons.
                         Box(
                             Modifier
                                 .fillMaxWidth()
