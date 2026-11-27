@@ -1,5 +1,7 @@
 package com.anilili.ui.crunchyroll
 
+import com.anilili.ui.theme.appCanvas
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,7 +102,7 @@ fun CrBrowseScreen(
         }
     }
 
-    Box(modifier.fillMaxSize().background(CrColors.Black)) {
+    Box(modifier.fillMaxSize().appCanvas()) {
         Column(Modifier.fillMaxSize()) {
             Row(
                 Modifier

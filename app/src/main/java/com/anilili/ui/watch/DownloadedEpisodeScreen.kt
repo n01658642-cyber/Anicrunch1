@@ -592,7 +592,7 @@ fun DownloadedEpisodeScreen(
                     Column(
                         Modifier
                             .fillMaxSize()
-                            .background(Color.Black)
+                            .background(Color(0xFF050505))
                             .statusBarsPadding(),
                     ) {
                         // Video sits below the status bar at a true 16:9, not under the clock/icons.

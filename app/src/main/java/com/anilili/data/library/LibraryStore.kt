@@ -185,6 +185,53 @@ object LibraryStore {
      * what the account's progress sync does for a viewer who is ([LocalWatchedStore.markFinished]).
      * [totalEpisodes] is the series' length, recorded so the account gets the full count later.
      */
+
+    /**
+     * Mark a single episode fully watched from the detail list (not from the player).
+     * Creates a history row when none exists so the first mark still sticks.
+     */
+    fun markEpisodeFullyWatched(
+        anilistId: Int,
+        title: String,
+        cover: String?,
+        episodeNumber: Double,
+        episodeTitle: String? = null,
+        provider: String = "auto",
+        category: String = "sub",
+        totalEpisodes: Int? = null,
+    ) {
+        val existing = historyFor(anilistId)
+        val base = existing ?: HistoryEntry(
+            anilistId = anilistId,
+            title = title,
+            cover = cover,
+            episodeNumber = episodeNumber,
+            episodeTitle = episodeTitle,
+            provider = provider,
+            category = category,
+        )
+        val watched = (base.watchedEpisodes + episodeNumber).toSet()
+        val next = totalEpisodes?.let { total ->
+            val n = episodeNumber + 1.0
+            if (n <= total) n else null
+        }
+        val seriesCompleted = totalEpisodes != null &&
+            episodeNumber >= totalEpisodes.toDouble()
+        if (seriesCompleted) {
+            LocalWatchedStore.markFinished(anilistId, title, cover, totalEpisodes)
+        }
+        val advanced = base.copy(
+            episodeNumber = next ?: episodeNumber,
+            episodeTitle = if (next != null) null else episodeTitle,
+            watchedEpisodes = watched,
+            positionMs = if (next != null) 0L else base.durationMs.coerceAtLeast(1L),
+            durationMs = base.durationMs.coerceAtLeast(1L),
+            fromRemote = false,
+        )
+        upsertHistory(advanced)
+        enqueueProgressSync(anilistId, episodeNumber.toInt().coerceAtLeast(1), totalEpisodes)
+    }
+
     fun markEpisodeWatched(
         anilistId: Int,
         watchedEpisode: Double,

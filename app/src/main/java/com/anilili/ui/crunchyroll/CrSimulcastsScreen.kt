@@ -1,5 +1,7 @@
 package com.anilili.ui.crunchyroll
 
+import com.anilili.ui.theme.appCanvas
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -106,7 +108,7 @@ fun CrSimulcastsScreen(
     Column(
         modifier
             .fillMaxSize()
-            .background(CrColors.Black)
+            .appCanvas()
             .statusBarsPadding(),
     ) {
         Text(

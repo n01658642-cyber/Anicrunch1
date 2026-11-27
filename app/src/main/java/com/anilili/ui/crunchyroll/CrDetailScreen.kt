@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
@@ -273,6 +274,17 @@ fun CrDetailScreen(
                             onDownloadAction = { action ->
                                 downloads.onEpisodeAction(target, action)
                             },
+                            onMarkWatched = {
+                                LibraryStore.markEpisodeFullyWatched(
+                                    anilistId = animeId,
+                                    title = info.title.english ?: info.title.romaji ?: "",
+                                    cover = info.coverImage.best,
+                                    episodeNumber = ep.number,
+                                    episodeTitle = ep.title,
+                                    category = if (SettingsStore.preferDub.value) "dub" else "sub",
+                                    totalEpisodes = info.episodes,
+                                )
+                            },
                             onClick = {
                                 val cat = if (SettingsStore.preferDub.value) "dub" else "sub"
                                 onPlay(
@@ -328,6 +340,7 @@ private fun CrEpisodeRow(
     downloadState: com.anilili.playback.EpisodeDownloadUi?,
     downloadPending: Boolean,
     onDownloadAction: (com.anilili.ui.components.EpisodeDownloadAction) -> Unit,
+    onMarkWatched: () -> Unit,
     onClick: () -> Unit,
 ) {
     Row(
@@ -381,7 +394,15 @@ private fun CrEpisodeRow(
             pending = downloadPending,
             onAction = onDownloadAction,
         )
-        // Mark watched is wired from the parent via a long-press on the row when needed.
+        IconButton(onClick = onMarkWatched) {
+            Icon(
+                Icons.Default.Check,
+                contentDescription = "Mark watched",
+                tint = CrColors.TextMuted,
+                modifier = Modifier.size(20.dp),
+            )
+        }
     }
 }
+
 

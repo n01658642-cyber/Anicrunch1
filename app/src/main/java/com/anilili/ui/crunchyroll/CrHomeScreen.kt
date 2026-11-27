@@ -1,5 +1,7 @@
 package com.anilili.ui.crunchyroll
 
+import com.anilili.ui.theme.appCanvas
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 
 import androidx.compose.foundation.background
@@ -84,7 +86,7 @@ fun CrHomeScreen(
     var showSearch by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { vm.load(); vm.loadPersonal() }
 
-    Box(modifier = modifier.fillMaxSize().background(CrColors.Black)) {
+    Box(modifier = modifier.fillMaxSize().appCanvas()) {
         when (val s = state) {
             is UiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = CrColors.accent)

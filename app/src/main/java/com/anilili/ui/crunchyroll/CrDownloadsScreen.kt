@@ -1,5 +1,7 @@
 package com.anilili.ui.crunchyroll
 
+import com.anilili.ui.theme.appCanvas
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -123,7 +125,7 @@ fun CrDownloadsScreen(
     Box(
         modifier
             .fillMaxSize()
-            .background(CrColors.Black),
+            .appCanvas(),
     ) {
         if (openSeries != null) {
             CrSeriesDownloads(

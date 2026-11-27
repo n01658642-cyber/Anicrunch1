@@ -419,7 +419,12 @@ class DetailViewModel : ViewModel() {
      * names there, and the providers' numbers would only replace them with bare ones.
      */
     private fun launchUncountedEpisodes(season: Media) {
-        if (!season.episodeCountUnknown()) return
+        // Also run when AniList gave zero rows (common for early-season airing entries
+        // whose nextAiring/episodes fields lag the providers).
+        val success = _state.value as? UiState.Success
+        val emptyList = success?.data?.episodes.isNullOrEmpty() == true &&
+            success?.data?.info?.id == season.id
+        if (!season.episodeCountUnknown() && !emptyList) return
         val seasonId = season.id
         viewModelScope.launch {
             val catalog = runCatching { providerCatalog(seasonId) }

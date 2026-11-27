@@ -444,11 +444,12 @@ object ProviderCatalog {
     // first paint; rows now reach the picker as each member answers, so a member only has to be
     // quick itself, not quicker than the rest.
     val fastAnivexaProviders = listOf(
-        // Broadened so phones/TVs actually walk more of the SFW catalogue, not just three.
+        // Broad fan-out so more servers are tried for quality/new-episode coverage.
         "anikoto", "anipm", "zoko", "anichan", "animepahe", "animeheaven",
         "animeonsen", "kaa", "allanime", "anizone", "animegg", "anineko",
         "2dhive", "uniquestream", "toonhub", "animekhor", "rareanimes",
-        "anidbapp", "reanime", "animekai",
+        "anidbapp", "reanime", "animekai", "xfdm", "animedekho", "kartoons",
+        "animeav1",
     )
 
     /**
