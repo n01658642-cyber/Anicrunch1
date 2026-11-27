@@ -890,7 +890,7 @@ private fun OfflineCrunchyrollPanel(
                 var expandInfo by remember { mutableStateOf(false) }
                 Text(
                     text = description,
-                    color = Color.White.copy(alpha = 0.78f),
+                    color = Color.White.copy(alpha = 0.72f),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 12.dp),
                     maxLines = if (expandInfo) Int.MAX_VALUE else 4,

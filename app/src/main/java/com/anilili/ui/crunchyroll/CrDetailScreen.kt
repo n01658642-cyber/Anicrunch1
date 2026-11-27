@@ -58,9 +58,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.anilili.data.library.LibraryStore
 import com.anilili.data.model.EpisodeItem
 import com.anilili.data.settings.SettingsStore
 import com.anilili.ui.UiState
+import com.anilili.ui.components.EpisodeArtwork
 import com.anilili.ui.components.EpisodeDownloadButton
 import com.anilili.ui.detail.DetailViewModel
 import com.anilili.ui.detail.rememberSeasonDownloads
@@ -272,10 +274,11 @@ fun CrDetailScreen(
                                 downloads.onEpisodeAction(target, action)
                             },
                             onClick = {
+                                val cat = if (SettingsStore.preferDub.value) "dub" else "sub"
                                 onPlay(
                                     animeId,
                                     "auto",
-                                    "sub",
+                                    cat,
                                     ep.number.toInt().toString(),
                                 )
                             },
@@ -286,7 +289,8 @@ fun CrDetailScreen(
                         Button(
                             onClick = {
                                 val first = episodes.firstOrNull()?.number?.toInt()?.toString() ?: "1"
-                                onPlay(animeId, "auto", "sub", first)
+                                val cat = if (SettingsStore.preferDub.value) "dub" else "sub"
+                                onPlay(animeId, "auto", cat, first)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.Black),
                             shape = RoundedCornerShape(28.dp),
@@ -339,20 +343,23 @@ private fun CrEpisodeRow(
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(6.dp)),
         ) {
-            AsyncImage(
-                model = episode.image ?: coverFallback,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+            EpisodeArtwork(
+                image = episode.image,
+                blurred = false,
+                errorFallback = coverFallback,
                 modifier = Modifier.fillMaxSize(),
             )
-            Box(
-                Modifier
-                    .align(Alignment.Center)
-                    .size(36.dp)
-                    .background(Color.Black.copy(0.55f), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(22.dp))
+            val showPlay by SettingsStore.showEpisodeThumbPlayButton.collectAsState()
+            if (showPlay) {
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .size(36.dp)
+                        .background(Color.Black.copy(0.55f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(22.dp))
+                }
             }
         }
         Spacer(Modifier.width(12.dp))
@@ -374,5 +381,7 @@ private fun CrEpisodeRow(
             pending = downloadPending,
             onAction = onDownloadAction,
         )
+        // Mark watched is wired from the parent via a long-press on the row when needed.
     }
 }
+

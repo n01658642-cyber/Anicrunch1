@@ -88,15 +88,25 @@ fun CrBrowseScreen(
                 0 -> vm.loadMore(HomeSection.POPULAR)
                 1 -> vm.loadMore(HomeSection.NEWEST)
                 2 -> vm.loadMore(HomeSection.TOP_RATED)
+                3 -> vm.loadMore(HomeSection.MUSIC)
                 else -> vm.loadMore(HomeSection.POPULAR)
             }
+        }
+    }
+    LaunchedEffect(tab) {
+        when (tab) {
+            3 -> vm.loadMore(HomeSection.MUSIC)
+            else -> Unit
         }
     }
 
     Box(modifier.fillMaxSize().background(CrColors.Black)) {
         Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -145,7 +155,12 @@ fun CrBrowseScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Popular",
+                    when (tab) {
+                        1 -> "Simulcasts"
+                        2 -> "Top rated"
+                        3 -> "Music"
+                        else -> "Popular"
+                    },
                     color = CrColors.TextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -166,6 +181,7 @@ fun CrBrowseScreen(
                     val list = when (tab) {
                         1 -> s.data.newest
                         2 -> s.data.topRated
+                        3 -> s.data.music
                         else -> s.data.popular
                     }
                     LazyVerticalGrid(

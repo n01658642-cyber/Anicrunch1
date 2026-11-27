@@ -63,6 +63,7 @@ enum class HomeSection {
     TOP_RATED,
     MOVIES,
     UPCOMING,
+    MUSIC,
 }
 
 data class HomeData(
@@ -72,6 +73,7 @@ data class HomeData(
     val movies: List<Media>,
     val topRated: List<Media>,
     val upcoming: List<Media> = emptyList(),
+    val music: List<Media> = emptyList(),
 ) {
     fun section(section: HomeSection): List<Media> = when (section) {
         HomeSection.NEWEST -> newest
@@ -80,6 +82,7 @@ data class HomeData(
         HomeSection.TOP_RATED -> topRated
         HomeSection.MOVIES -> movies
         HomeSection.UPCOMING -> upcoming
+        HomeSection.MUSIC -> music
     }
 
     fun withSection(section: HomeSection, items: List<Media>): HomeData = when (section) {
@@ -89,6 +92,7 @@ data class HomeData(
         HomeSection.TOP_RATED -> copy(topRated = items)
         HomeSection.MOVIES -> copy(movies = items)
         HomeSection.UPCOMING -> copy(upcoming = items)
+        HomeSection.MUSIC -> copy(music = items)
     }
 }
 
@@ -382,6 +386,7 @@ class HomeViewModel : ViewModel() {
                     HomeSection.TOP_RATED -> repo.topRated(nextPage)
                     HomeSection.MOVIES -> repo.movies(nextPage)
                     HomeSection.UPCOMING -> repo.upcoming(nextPage)
+                    HomeSection.MUSIC -> repo.music(nextPage)
                 }
                 // A refresh landed while this page was in flight; its results belong to a catalog
                 // that no longer exists, and appending them would resurrect the old list.

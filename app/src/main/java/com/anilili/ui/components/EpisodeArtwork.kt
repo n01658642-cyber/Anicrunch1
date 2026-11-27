@@ -92,7 +92,7 @@ fun EpisodeArtwork(
                     ),
             )
         } else {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant.copy(0.35f)))
+            Box(Modifier.fillMaxSize().background(Color(0xFF1A1A1A)))
         }
         if (blurred) {
             Surface(
