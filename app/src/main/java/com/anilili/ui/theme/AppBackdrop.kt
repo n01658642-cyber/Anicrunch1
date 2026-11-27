@@ -235,8 +235,12 @@ internal suspend fun renderAppBackdrop(
     val lowRam = (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)?.isLowRamDevice == true
     val longSide = maxOf(window.width, window.height).toFloat()
     val scale = when {
+        // Blurred: smaller bitmap is fine — blur hides the softness.
         blur -> if (lowRam) 1f / 3 else 0.5f
+        // Clear (no blur): render as close to screen size as memory allows so the
+        // background image is sharp and fully visible under the dim layer.
         else -> minOf(1f, (if (lowRam) SHARP_LOW_RAM_LONG_SIDE else SHARP_LONG_SIDE) / longSide)
+            .coerceAtLeast(if (lowRam) 0.55f else 0.75f)
     }
     val width = (window.width * scale).roundToInt().coerceAtLeast(1)
     val height = (window.height * scale).roundToInt().coerceAtLeast(1)
@@ -295,7 +299,7 @@ internal fun centreCrop(sourceW: Int, sourceH: Int, targetW: Int, targetH: Int):
 }
 
 /** A sharp picture's long side, in pixels: enough for a phone or a 1080p television at arm's length. */
-private const val SHARP_LONG_SIDE = 1600f
+private const val SHARP_LONG_SIDE = 1920f
 
 /** A sharp picture's long side on a low-RAM device. */
 private const val SHARP_LOW_RAM_LONG_SIDE = 960f

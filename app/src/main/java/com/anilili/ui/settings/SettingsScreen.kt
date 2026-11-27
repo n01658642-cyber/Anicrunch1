@@ -299,6 +299,7 @@ private enum class SettingsPicker {
     THEME_BACKDROP_ANIME,
     THEME_BACKDROP_IMAGE_TV,
     THEME_BACKDROP_DIM,
+    THEME_BACKDROP_BLUR,
     FORM_FACTOR,
     POSTER_ELEMENTS,
     HOME_LAYOUT,
@@ -1873,6 +1874,23 @@ fun SettingsScreen(
             dismissOnSelect = false,
         )
 
+        SettingsPicker.THEME_BACKDROP_BLUR -> MidnightChoicePicker(
+            kicker = "Appearance",
+            title = "Background image style",
+            explanation = "Blur softens the picture into a backdrop. Clear removes the blur and " +
+                "shows the image sharply behind every page.",
+            options = listOf(true, false),
+            selected = appBackdropBlur,
+            label = { if (it) "Blurred" else "Clear" },
+            description = {
+                if (it) "Soft frosted look so posters stay readable"
+                else "Sharp image with no blur — the full picture shows through"
+            },
+            onSelect = SettingsStore::setAppBackdropBlur,
+            onDismiss = closePicker,
+            dismissOnSelect = true,
+        )
+
         SettingsPicker.THEME_STYLE -> MidnightChoicePicker(
             kicker = "Appearance",
             title = "Colour style",
@@ -2830,12 +2848,12 @@ fun SettingsScreen(
                             onClick = { openPicker = SettingsPicker.THEME_BACKDROP_DIM },
                         )
                     }
-                    item(key = "Blur background") {
-                        MidnightSettingSwitchRow(
-                            title = "Blur background",
-                            description = "Soften the picture so it reads as a backdrop, not a poster",
-                            checked = appBackdropBlur,
-                            onCheckedChange = SettingsStore::setAppBackdropBlur,
+                    item(key = "Background image style") {
+                        MidnightSettingRow(
+                            title = "Background image style",
+                            description = "Blur softens the picture; Clear shows it sharp with no blur",
+                            value = if (appBackdropBlur) "Blurred" else "Clear",
+                            onClick = { openPicker = SettingsPicker.THEME_BACKDROP_BLUR },
                         )
                     }
                 }
