@@ -400,6 +400,7 @@ fun SettingsScreen(
     val downloadQuality by SettingsStore.downloadQuality.collectAsState()
     val parallelDownloads by SettingsStore.parallelDownloads.collectAsState()
     val showEpisodeThumbPlayButton by SettingsStore.showEpisodeThumbPlayButton.collectAsState()
+    val showPlayerSeriesLogo by SettingsStore.showPlayerSeriesLogo.collectAsState()
     val downloadDestination by SettingsStore.downloadDestination.collectAsState()
     val releaseNotifications by SettingsStore.releaseNotifications.collectAsState()
     val announcements by SettingsStore.announcements.collectAsState()
@@ -2409,6 +2410,14 @@ fun SettingsScreen(
                         description = "Show the circular play icon over offline episode stills",
                         checked = showEpisodeThumbPlayButton,
                         onCheckedChange = SettingsStore::setShowEpisodeThumbPlayButton,
+                    )
+                }
+                item(key = "Series logo in player") {
+                    MidnightSettingSwitchRow(
+                        title = "Series logo in player",
+                        description = "Show the series logo over the video when available",
+                        checked = showPlayerSeriesLogo,
+                        onCheckedChange = SettingsStore::setShowPlayerSeriesLogo,
                     )
                 }
                 item(key = "Clear update leftovers") {

@@ -1,9 +1,7 @@
 package com.anilili.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,10 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -31,36 +29,23 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.anilili.data.model.EpisodeItem
 
-/** Provider art wins when available; the anime/season art keeps sparse catalogs presentable. */
+/**
+ * Resolve the image URL for an episode card:
+ * 1) episode-specific still
+ * 2) season / series fallback (banner or cover) when the still is missing
+ */
 internal fun episodeArtworkImage(episodeImage: String?, fallbackImage: String?): String? =
-    episodeImage ?: fallbackImage
+    episodeImage?.takeIf { it.isNotBlank() } ?: fallbackImage?.takeIf { it.isNotBlank() }
 
 /**
- * The fallback to hand [episodeArtworkImage] for [episodes], or null when it would be the only
- * picture in the list.
- *
- * The fallback is the season banner — a wide still from the show — and on a provider that ships no
- * per-episode art (bonk, among others) it was painted on every row, so twelve episodes came out as
- * twelve copies of the same frame. That does not keep a sparse catalog presentable; it reads as a
- * list that failed to load, and it hides the one fact the rows could still have told apart, which
- * is that there is no thumbnail for this episode. A blank frame behind the EP badge says that
- * honestly.
- *
- * A list of one is exempt: a movie or a single special cannot look repeated, and there the poster
- * is the best picture available.
+ * Series art handed to rows when an episode still is absent. Always allowed — empty black boxes
+ * are worse than a repeated banner; Coil's onError still swaps failed CDN URLs at runtime.
  */
 internal fun episodeArtworkFallback(episodes: List<EpisodeItem>, fallbackImage: String?): String? =
-    // Multi-episode lists: never paint the series banner on every row. That reads as "one download
-    // thumb took over the list". Only a single-episode title (movie/OVA) uses the series art.
-    fallbackImage?.takeIf { episodes.size <= 1 }
+    fallbackImage?.takeIf { it.isNotBlank() }
 
 /**
- * Episode artwork, blurred when the viewer has asked for spoiler-free episode images.
- *
- * Only draws. Tapping a thumbnail used to flip that preference for every episode image in the app,
- * which meant a tap aimed at an episode — the thing every other part of the row does — hid or
- * revealed the whole list instead of playing it. The preference lives in Settings alone now, and a
- * tap here falls through to the card like a tap anywhere else on it.
+ * Episode artwork with series fallback when the still is missing or the CDN 404s.
  */
 @Composable
 fun EpisodeArtwork(
@@ -69,81 +54,62 @@ fun EpisodeArtwork(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
     compact: Boolean = false,
-    /** Series banner/cover used only when [image] is set but the CDN 404s (no black box). */
+    /** Series banner/cover when [image] is null or the CDN fails. */
     errorFallback: String? = null,
 ) {
-    // Coil 2.7 ImageRequest.error() only accepts a Drawable / res id — a URL string threw
-    // IllegalStateException (the still URL itself) on the main thread and crashed detail.
-    // onError + remembered fallback URL is the safe way to avoid black boxes.
     var loadFailed by remember(image, errorFallback) { mutableStateOf(false) }
+    val primary = image?.takeIf { it.isNotBlank() }
+    val secondary = errorFallback?.takeIf { it.isNotBlank() }
     val model = when {
-        !image.isNullOrBlank() && !loadFailed -> image
-        !errorFallback.isNullOrBlank() && !image.isNullOrBlank() && loadFailed -> errorFallback
-        else -> image
+        primary != null && !loadFailed -> primary
+        secondary != null -> secondary
+        else -> primary
     }
     Box(modifier = modifier.clipToBounds()) {
-        AsyncImage(
-            model = model,
-            contentDescription = null,
-            contentScale = contentScale,
-            onError = {
-                if (!errorFallback.isNullOrBlank() && !image.isNullOrBlank() && !loadFailed) {
-                    loadFailed = true
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .then(
-                    if (blurred) {
-                        Modifier
-                            .graphicsLayer {
-                                // Fill the soft edge introduced by the blur without changing the
-                                // card's measured size or the sharp overlays drawn by the caller.
-                                scaleX = 1.10f
-                                scaleY = 1.10f
-                            }
-                            .blur(20.dp)
-                    } else {
-                        Modifier
-                    },
-                ),
-        )
-        if (blurred) {
-            Box(
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                contentScale = contentScale,
+                onError = {
+                    if (primary != null && secondary != null && !loadFailed && model == primary) {
+                        loadFailed = true
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
-                    // Compose blur is not rendered on older Android versions. This veil is the
-                    // privacy fallback and also keeps high-contrast stills unreadable everywhere.
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.68f)),
-                contentAlignment = Alignment.Center,
+                    .then(
+                        if (blurred) {
+                            Modifier
+                                .graphicsLayer {
+                                    scaleX = 1.10f
+                                    scaleY = 1.10f
+                                }
+                                .blur(16.dp)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            )
+        } else {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant.copy(0.35f)))
+        }
+        if (blurred) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(if (compact) 6.dp else 10.dp),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(4.dp),
             ) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.58f),
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(50),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(
-                            horizontal = if (compact) 6.dp else 9.dp,
-                            vertical = if (compact) 4.dp else 6.dp,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VisibilityOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(if (compact) 14.dp else 17.dp),
-                        )
-                        if (!compact) {
-                            Text(
-                                text = "Spoilers hidden",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                }
+                Icon(
+                    Icons.Default.VisibilityOff,
+                    contentDescription = null,
+                    tint = Color.White.copy(0.9f),
+                    modifier = Modifier
+                        .padding(6.dp)
+                        .size(if (compact) 16.dp else 20.dp),
+                )
             }
         }
     }

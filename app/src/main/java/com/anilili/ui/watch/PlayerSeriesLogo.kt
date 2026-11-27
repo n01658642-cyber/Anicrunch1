@@ -6,6 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import com.anilili.data.settings.SettingsStore
 import com.anilili.ui.components.SeriesLogo
 
 /**
@@ -33,8 +36,10 @@ internal fun PlayerSeriesName(
     modifier: Modifier = Modifier,
     fallback: @Composable () -> Unit,
 ) {
+    val showLogo by SettingsStore.showPlayerSeriesLogo.collectAsState()
+    val url = LocalPlayerSeriesLogo.current?.takeIf { showLogo }
     SeriesLogo(
-        url = LocalPlayerSeriesLogo.current,
+        url = url,
         contentDescription = title,
         modifier = modifier.heightIn(max = maxHeight).widthIn(max = maxWidth),
         fallback = fallback,

@@ -774,6 +774,9 @@ object SettingsStore {
     private val _showEpisodeThumbPlayButton = MutableStateFlow(true)
     val showEpisodeThumbPlayButton = _showEpisodeThumbPlayButton.asStateFlow()
 
+    private val _showPlayerSeriesLogo = MutableStateFlow(true)
+    val showPlayerSeriesLogo = _showPlayerSeriesLogo.asStateFlow()
+
     private val _releaseNotifications = MutableStateFlow(true)
     val releaseNotifications = _releaseNotifications.asStateFlow()
 
@@ -1347,6 +1350,9 @@ object SettingsStore {
 
     fun setShowEpisodeThumbPlayButton(value: Boolean) =
         save(SHOW_EPISODE_THUMB_PLAY_BUTTON, value, _showEpisodeThumbPlayButton)
+
+    fun setShowPlayerSeriesLogo(value: Boolean) =
+        save(SHOW_PLAYER_SERIES_LOGO, value, _showPlayerSeriesLogo)
     fun setReleaseNotifications(value: Boolean) = save(RELEASE_NOTIFICATIONS, value, _releaseNotifications)
     fun setAnnouncements(value: Boolean) = save(ANNOUNCEMENTS, value, _announcements)
     fun setSyncSavedToAniList(value: Boolean) = save(SYNC_SAVED_TO_ANILIST, value, _syncSavedToAniList)
@@ -2057,6 +2063,7 @@ object SettingsStore {
         _autoSyncAniList.value = prefs[AUTO_SYNC] ?: true
         _preferDub.value = prefs[PREFER_DUB] ?: false
         _showEpisodeThumbPlayButton.value = prefs[SHOW_EPISODE_THUMB_PLAY_BUTTON] ?: true
+        _showPlayerSeriesLogo.value = prefs[SHOW_PLAYER_SERIES_LOGO] ?: true
         _releaseNotifications.value = prefs[RELEASE_NOTIFICATIONS] ?: true
         _announcements.value = prefs[ANNOUNCEMENTS] ?: true
         _syncSavedToAniList.value = prefs[SYNC_SAVED_TO_ANILIST] ?: true
@@ -2227,6 +2234,7 @@ object SettingsStore {
     private val AUTO_SYNC = booleanPreferencesKey("auto_sync_anilist")
     private val PREFER_DUB = booleanPreferencesKey("prefer_dub")
     private val SHOW_EPISODE_THUMB_PLAY_BUTTON = booleanPreferencesKey("show_episode_thumb_play_button")
+    private val SHOW_PLAYER_SERIES_LOGO = booleanPreferencesKey("show_player_series_logo")
     private val RELEASE_NOTIFICATIONS = booleanPreferencesKey("release_notifications")
     private val ANNOUNCEMENTS = booleanPreferencesKey("announcements")
     private val SYNC_SAVED_TO_ANILIST = booleanPreferencesKey("sync_saved_to_anilist")

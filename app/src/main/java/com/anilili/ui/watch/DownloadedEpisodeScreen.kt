@@ -802,7 +802,7 @@ private fun OfflineCrunchyrollPanel(
     }
     Surface(
         modifier = modifier,
-        color = Color(0xFF0E0E0E),
+        color = Color.Black,
     ) {
         Column(
             Modifier
@@ -837,7 +837,8 @@ private fun OfflineCrunchyrollPanel(
             }
 
             // Series logo above title (Crunchyroll-style)
-            if (!seriesLogo.isNullOrBlank()) {
+            val showLogo by com.anilili.data.settings.SettingsStore.showPlayerSeriesLogo.collectAsState()
+            if (showLogo && !seriesLogo.isNullOrBlank()) {
                 AsyncImage(
                     model = seriesLogo,
                     contentDescription = metadata.seriesTitle,
@@ -886,13 +887,23 @@ private fun OfflineCrunchyrollPanel(
                 modifier = Modifier.padding(top = 4.dp),
             )
             if (!description.isNullOrBlank()) {
+                var expandInfo by remember { mutableStateOf(false) }
                 Text(
                     text = description,
                     color = Color.White.copy(alpha = 0.78f),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(top = 12.dp),
-                    maxLines = 6,
+                    maxLines = if (expandInfo) Int.MAX_VALUE else 4,
                     overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (expandInfo) "Less" else "More",
+                    color = Color(0xFFFF6A00),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .clickable { expandInfo = !expandInfo },
                 )
             }
             Text(
@@ -1036,7 +1047,7 @@ private fun OfflineAllEpisodesSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(0xFF121212),
+        containerColor = Color.Black,
     ) {
         Text(
             text = "Episodes",

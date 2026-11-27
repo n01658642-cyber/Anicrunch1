@@ -56,6 +56,9 @@ import com.anilili.playback.OfflineEpisode
 import com.anilili.playback.OfflineSeries
 import com.anilili.playback.formatDownloadBytes
 import com.anilili.data.settings.SettingsStore
+import com.anilili.data.library.LibraryStore
+import com.anilili.ui.components.episodeWatchFraction
+import com.anilili.ui.components.WatchProgressBar
 import com.anilili.playback.offlineEpisodes
 import com.anilili.playback.offlineSeries
 import com.anilili.ui.components.LocalAppChromeBottomInset
@@ -368,6 +371,19 @@ private fun CrOfflineEpisodeRow(
                     Icon(Icons.Default.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
                 }
             }
+            val history by LibraryStore.history.collectAsState()
+            val entry = history.firstOrNull { it.anilistId == meta.anilistId }
+            val epNum = meta.episodeNumber.trim().toDoubleOrNull()
+            val frac = if (entry != null && epNum != null) episodeWatchFraction(entry, epNum) else 0f
+            if (frac > 0.01f) {
+                WatchProgressBar(
+                    fraction = frac,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -388,7 +404,15 @@ private fun CrOfflineEpisodeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            val historyRow by LibraryStore.history.collectAsState()
+            val hist = historyRow.firstOrNull { it.anilistId == meta.anilistId }
+            val n = meta.episodeNumber.trim().toDoubleOrNull()
+            val watchedPct = if (hist != null && n != null) {
+                (episodeWatchFraction(hist, n) * 100).toInt().coerceIn(0, 100)
+            } else 0
             val status = when {
+                episode.isPlayable && watchedPct >= 100 -> "Watched"
+                episode.isPlayable && watchedPct > 0 -> "Available offline · ${watchedPct}%"
                 episode.isPlayable -> "Available offline"
                 episode.isDownloading -> "Downloading…"
                 else -> "Not ready"
