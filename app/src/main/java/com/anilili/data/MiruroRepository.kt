@@ -2056,6 +2056,23 @@ class MiruroRepository(
             DiagnosticsLog.event("Episode metadata skipped for adult title id=$anilistId")
             return emptyList()
         }
+        // Movies: never fan-out to TV episode catalogues — they frequently resolve to the wrong
+        // franchise entry and attach another show's still/title to the single movie row.
+        if (info != null && info.format.equals("MOVIE", ignoreCase = true)) {
+            val art = info.bannerImage
+                ?: info.coverImage.extraLarge
+                ?: info.coverImage.best
+            DiagnosticsLog.event("Episode metadata movie lock id=$anilistId")
+            return listOf(
+                EpisodeMetadata(
+                    number = 1.0,
+                    title = info.title.preferred,
+                    still = art,
+                    overview = info.description,
+                    runtime = info.duration,
+                ),
+            )
+        }
         val konohaRun = runCatching { konoha.episodes(anilistId) }
             .onFailure { DiagnosticsLog.throwable("Konoha episodes failed id=$anilistId", it) }
             .getOrDefault(emptyList())

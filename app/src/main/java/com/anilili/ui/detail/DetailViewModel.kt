@@ -792,6 +792,25 @@ internal fun mergeEpisodeMetadata(
     animeId: Int,
 ): List<EpisodeItem> {
     if (meta.isEmpty()) return base
+    // Single locked movie row (title + still already set from the AniList entry): external
+    // catalogues must not replace them with another title's stills/names.
+    if (base.size == 1) {
+        val only = base[0]
+        val lockedTitle = !only.title.isNullOrBlank() &&
+            !com.anilili.data.model.isGenericEpisodeTitle(only.title)
+        val lockedArt = !only.image.isNullOrBlank()
+        if (lockedTitle && lockedArt && only.number == 1.0) {
+            val extra = meta.firstOrNull { it.number == 1.0 } ?: meta.firstOrNull()
+            return listOf(
+                only.copy(
+                    overview = only.overview ?: extra?.overview,
+                    runtime = only.runtime ?: extra?.runtime,
+                    rating = only.rating ?: extra?.rating,
+                    airDate = only.airDate ?: extra?.airDate,
+                ),
+            )
+        }
+    }
     // Index by exact number and by whole-number form so 1 and 1.0 both find the still.
     val byNumber = buildMap<Double, com.anilili.data.model.EpisodeMetadata> {
         meta.forEach { ep ->
